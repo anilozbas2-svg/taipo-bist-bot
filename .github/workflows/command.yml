@@ -3,8 +3,9 @@ name: TAIPO Command Listener
 on:
   workflow_dispatch:
   schedule:
-    # Her 5 dakikada bir kontrol eder (komut var mı diye)
-    - cron: "*/5 * * * *"
+    - cron: "*/2 7-15 * * 1-5"
+    # Türkiye saati UTC+3 → 10:00–18:00
+    # 2 dakikada bir komut var mı diye bakar
 
 jobs:
   command-bot:
@@ -34,6 +35,7 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
+          MODE: COMMAND
         run: |
           python main.py
 
