@@ -1,410 +1,443 @@
 import os
 import json
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, date
+from zoneinfo import ZoneInfo
 
 import requests
 import yfinance as yf
 
 
+# =========================
+#   CONFIG
+# =========================
+TZ = ZoneInfo("Europe/Istanbul")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
-TARGET_CHAT_ID = os.getenv("CHAT_ID", "").strip()  # grup chat id: -5049...
-MODE = os.getenv("MODE", "AUTO").strip().upper()   # AUTO veya LISTEN
+TARGET_CHAT_ID = os.getenv("CHAT_ID", "").strip()  # group chat id like -5049...
+MODE = os.getenv("MODE", "AUTO").strip().upper()   # AUTO or COMMAND
 
 STATE_FILE = "state.json"
-DAILY_FILE = "daily_watch.json"
-BIST_FILE = "bist100.txt"
+DAILY_WATCH_FILE = "daily_watch.json"
+SYMBOLS_FILE = "bist100.txt"
 
-TZ_OFFSET_HOURS = 3  # Türkiye UTC+3
+TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
+
+# Market time window (TR)
+OPEN_HOUR = 10
+CLOSE_HOUR = 18
+OPEN_PICK_MINUTE_MAX = 2   # 10:00–10:02 arası "açılış" say
+REPLY_COOLDOWN_SEC = 20    # komut spam'ini yumuşatmak için
 
 
-# -------------------------
-# Utilities
-# -------------------------
-def now_tr():
-    return datetime.utcnow() + timedelta(hours=TZ_OFFSET_HOURS)
-
-def load_json(path, default):
+# =========================
+#   IO HELPERS
+# =========================
+def load_json(path: str, default):
     try:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return default
 
-def save_json(path, data):
-    with open(path, "w", encoding="utf-8") as f:
+
+def save_json(path: str, data):
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-
-def load_state():
-    return load_json(STATE_FILE, {"last_update_id": 0})
-
-def save_state(state):
-    save_json(STATE_FILE, state)
-
-def read_bist_symbols():
-    # bist100.txt içinde örnek: ASELS, BIMAS, ASTOR...
-    symbols = []
-    try:
-        with open(BIST_FILE, "r", encoding="utf-8") as f:
-            for line in f:
-                s = line.strip().upper()
-                if not s:
-                    continue
-                # zaten .IS ise dokunma
-                if s.endswith(".IS"):
-                    symbols.append(s)
-                else:
-                    symbols.append(s + ".IS")
-    except Exception:
-        pass
-    return list(dict.fromkeys(symbols))  # uniq, order preserved
+    os.replace(tmp, path)
 
 
-# -------------------------
-# Telegram
-# -------------------------
-def tg_api(method):
-    return f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
-
-def get_updates(offset):
-    try:
-        r = requests.get(
-            tg_api("getUpdates"),
-            params={"offset": offset, "timeout": 20, "allowed_updates": ["message"]},
-            timeout=25
-        )
-        return r.json() if r.ok else {"ok": False, "result": []}
-    except Exception:
-        return {"ok": False, "result": []}
-
-def send_message(chat_id, text):
-    if not BOT_TOKEN or not chat_id:
-        return
-    try:
-        requests.post(
-            tg_api("sendMessage"),
-            data={
-                "chat_id": chat_id,
-                "text": text,
-                "parse_mode": "HTML",
-                "disable_web_page_preview": True
+def ensure_files():
+    # state.json yoksa oluştur
+    if not os.path.exists(STATE_FILE):
+        save_json(STATE_FILE, {
+            "last_update_id": 0,
+            "last_command_reply_ts": 0,
+            "day": "",
+            "watch": {
+                "symbols": [],
+                "baseline": {},   # {symbol: baseline_price}
+                "picked_at": "",
             },
-            timeout=20
-        )
-    except Exception:
-        pass
+            "sent_open_message": False
+        })
 
-def extract_text_and_chat(update):
-    msg = update.get("message") or {}
-    text = (msg.get("text") or "").strip()
-    chat = msg.get("chat") or {}
-    chat_id = chat.get("id")
-    return text, chat_id, msg
-
-def is_command(text, cmd):
-    # /taipo veya /taipo@BotUser
-    t = (text or "").strip()
-    if not t.startswith("/"):
-        return False
-    first = t.split()[0]  # sadece ilk token
-    first = first.split("@")[0].lower()
-    return first == cmd.lower()
+    # daily_watch.json yoksa oluştur
+    if not os.path.exists(DAILY_WATCH_FILE):
+        save_json(DAILY_WATCH_FILE, {
+            "day": "",
+            "symbols": [],
+            "baseline": {},
+            "picked_at": ""
+        })
 
 
-# -------------------------
-# Market Data
-# -------------------------
-def batch_download_last_prices(tickers):
-    """
-    100 hisseyi tek tek çağırmak yerine batch indir.
-    1 dakikalık veri: bugünkü son fiyatı yakalar.
-    """
-    if not tickers:
-        return {}
-
-    try:
-        df = yf.download(
-            tickers=tickers,
-            period="1d",
-            interval="1m",
-            group_by="ticker",
-            threads=True,
-            progress=False
-        )
-    except Exception:
-        return {}
-
-    prices = {}
-
-    # Tek ticker gelirse kolon yapısı farklı olabiliyor
-    if isinstance(df.columns, pd.MultiIndex) if "pd" in globals() else False:
-        pass
-
-    # yfinance dönüşleri bazen karışık: iki durumu da handle edelim
-    try:
-        # Çoklu ticker: df['Close'][TICKER] veya df[(TICKER,'Close')]
-        if hasattr(df.columns, "levels") and len(df.columns.levels) == 2:
-            # MultiIndex: (PriceType, Ticker) ya da (Ticker, PriceType) olabiliyor
-            # En sağlamı: her ticker için close kolonunu bul.
-            for t in tickers:
-                close_series = None
-                # olası 2 düzen
-                if (t, "Close") in df.columns:
-                    close_series = df[(t, "Close")]
-                elif ("Close", t) in df.columns:
-                    close_series = df[("Close", t)]
-                if close_series is not None and len(close_series.dropna()) > 0:
-                    prices[t] = float(close_series.dropna().iloc[-1])
-        else:
-            # Tek ticker: df['Close']
-            if "Close" in df.columns and len(df["Close"].dropna()) > 0 and len(tickers) == 1:
-                prices[tickers[0]] = float(df["Close"].dropna().iloc[-1])
-    except Exception:
-        return {}
-
-    # Eğer batch boş kaldıysa fast_info fallback (yavaş ama çalışır)
-    if not prices:
-        for t in tickers[:20]:  # limit koyuyoruz, yoksa 100 tane çok uzar
-            try:
-                ti = yf.Ticker(t)
-                lp = ti.fast_info.get("last_price")
-                if lp:
-                    prices[t] = float(lp)
-            except Exception:
+def load_symbols():
+    # bist100.txt formatı: her satırda bir sembol örn: ASELS.IS
+    if not os.path.exists(SYMBOLS_FILE):
+        return []
+    syms = []
+    with open(SYMBOLS_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            s = line.strip()
+            if not s:
                 continue
-
-    return prices
-
-def get_prev_close(ticker):
-    try:
-        h = yf.Ticker(ticker).history(period="5d", interval="1d")
-        h = h.dropna()
-        if len(h) >= 2:
-            return float(h["Close"].iloc[-2])
-        elif len(h) == 1:
-            return float(h["Close"].iloc[-1])
-    except Exception:
-        return None
-    return None
+            # Çok güvenli: .IS yoksa ekle
+            if not s.endswith(".IS"):
+                s = s + ".IS"
+            syms.append(s)
+    # duplicate temizle
+    return list(dict.fromkeys(syms))
 
 
-# -------------------------
-# Daily Watch Logic
-# -------------------------
-def load_daily():
-    return load_json(DAILY_FILE, {})
-
-def reset_daily_if_new_day():
-    d = load_daily()
-    today = now_tr().strftime("%Y-%m-%d")
-    if d.get("date") and d.get("date") != today:
-        save_json(DAILY_FILE, {})  # reset
-
-def pick_daily_top3():
-    """
-    10:01 civarı çalışır:
-    - BIST100 tarar
-    - anlık fiyat / önceki kapanış ile % değişime göre en güçlü 3 seçer
-    - daily_watch.json içine kaydeder
-    """
-    symbols = read_bist_symbols()
-    if not symbols:
-        return None
-
-    # Anlık fiyatları batch çek
-    last_prices = batch_download_last_prices(symbols)
-    if not last_prices:
-        return None
-
-    scored = []
-    for sym, lastp in last_prices.items():
-        pc = get_prev_close(sym)
-        if not pc or pc <= 0:
-            continue
-        chg = ((lastp - pc) / pc) * 100.0
-        scored.append((sym, lastp, pc, chg))
-
-    scored.sort(key=lambda x: x[3], reverse=True)
-    top3 = scored[:3]
-    if not top3:
-        return None
+# =========================
+#   TELEGRAM
+# =========================
+def send_message(text: str, chat_id: str = None):
+    if not chat_id:
+        chat_id = TARGET_CHAT_ID
+    if not BOT_TOKEN or not chat_id:
+        return False
 
     payload = {
-        "date": now_tr().strftime("%Y-%m-%d"),
-        "picked_at": now_tr().strftime("%d.%m.%Y %H:%M"),
-        "watch": [
-            {
-                "symbol": s.replace(".IS", ""),
-                "ticker": s,
-                "base_price": round(lp, 2),      # 10:01 anlık
-                "prev_close": round(pc, 2),
-            }
-            for (s, lp, pc, _) in top3
-        ]
+        "chat_id": chat_id,
+        "text": text,
+        "disable_web_page_preview": True
     }
-    save_json(DAILY_FILE, payload)
-    return payload
+    try:
+        r = requests.post(f"{TELEGRAM_API}/sendMessage", json=payload, timeout=20)
+        return r.status_code == 200
+    except Exception:
+        return False
 
-def build_watch_message(daily):
+
+def get_updates(offset: int):
+    if not BOT_TOKEN:
+        return []
+    params = {"timeout": 0, "offset": offset}
+    try:
+        r = requests.get(f"{TELEGRAM_API}/getUpdates", params=params, timeout=20)
+        data = r.json()
+        return data.get("result", []) if data.get("ok") else []
+    except Exception:
+        return []
+
+
+def extract_message(update: dict):
+    # message or edited_message
+    msg = update.get("message") or update.get("edited_message")
+    if not msg:
+        return None
+    return msg
+
+
+def msg_text(msg: dict):
+    return (msg.get("text") or "").strip()
+
+
+def msg_chat_id(msg: dict):
+    chat = msg.get("chat") or {}
+    return str(chat.get("id", ""))
+
+
+def is_target_chat(msg: dict):
+    # Eğer CHAT_ID set ise sadece o gruptan geleni dinle
+    cid = msg_chat_id(msg)
+    return (TARGET_CHAT_ID and cid == str(TARGET_CHAT_ID))
+
+
+# =========================
+#   DATA FETCH
+# =========================
+def fetch_quote(symbol: str):
     """
-    Saatlik takip mesajı (hep aynı 3 hisse)
-    - base -> % değişim
+    Returns dict:
+      {
+        symbol, price, prev_close, change_pct
+      }
     """
-    watch = daily.get("watch") or []
-    if not watch:
+    try:
+        t = yf.Ticker(symbol)
+        # fast_info genelde daha hızlı
+        fi = getattr(t, "fast_info", None)
+        price = None
+        prev_close = None
+
+        if fi:
+            price = fi.get("last_price") or fi.get("lastPrice") or fi.get("last_price")
+            prev_close = fi.get("previous_close") or fi.get("previousClose")
+
+        # fallback
+        if price is None or prev_close is None:
+            hist = t.history(period="2d", interval="1d")
+            if hist is not None and len(hist) >= 1:
+                prev_close = float(hist["Close"].iloc[-1])
+            hist2 = t.history(period="1d", interval="1m")
+            if hist2 is not None and len(hist2) >= 1:
+                price = float(hist2["Close"].iloc[-1])
+
+        if price is None or prev_close in (None, 0):
+            return None
+
+        change_pct = ((float(price) - float(prev_close)) / float(prev_close)) * 100.0
+        return {
+            "symbol": symbol,
+            "price": round(float(price), 2),
+            "prev_close": round(float(prev_close), 2),
+            "change_pct": round(float(change_pct), 2),
+        }
+    except Exception:
         return None
 
-    tickers = [w["ticker"] for w in watch]
-    last_prices = batch_download_last_prices(tickers)
 
-    lines = []
-    header = (
-        f"📡 <b>TAIPO-BIST WATCH</b>\n"
-        f"🕒 {now_tr().strftime('%d.%m.%Y %H:%M')}\n"
-        f"🎯 Günün 3'lüsü (10:01 seçimi)\n"
-        f"Seçim zamanı: {daily.get('picked_at','-')}\n"
-        f"\n"
-    )
-    for w in watch:
-        t = w["ticker"]
-        sym = w["symbol"]
-        base = float(w["base_price"])
-        lastp = float(last_prices.get(t, base))
-        pct = ((lastp - base) / base) * 100.0 if base > 0 else 0.0
-        lines.append(f"• {sym} → {round(lastp,2)}  (<b>%{round(pct,2)}</b>)")
-
-    footer = "\n\nKomut: /taipo"
-    return header + "\n".join(lines) + footer
-
-
-# -------------------------
-# Radar (mevcut gibi kalsın: top gainers/losers)
-# -------------------------
-def build_radar():
-    symbols = read_bist_symbols()
-    if not symbols:
-        return "📡 TAIPO-BIST RADAR\nVeri yok (bist100.txt bulunamadı)."
-
-    last_prices = batch_download_last_prices(symbols)
-    if not last_prices:
-        return "📡 TAIPO-BIST RADAR\nVeri çekilemedi (yfinance)."
-
+def scan_top3(symbols):
     results = []
-    for sym, lastp in last_prices.items():
-        pc = get_prev_close(sym)
-        if not pc or pc <= 0:
-            continue
-        pct = ((lastp - pc) / pc) * 100.0
-        results.append((sym, lastp, pc, pct))
+    for sym in symbols:
+        q = fetch_quote(sym)
+        if q:
+            results.append(q)
 
     if not results:
-        return "📡 TAIPO-BIST RADAR\nVeri işlenemedi."
+        return []
 
-    strongest = sorted(results, key=lambda x: x[3], reverse=True)[:3]
-    weakest = sorted(results, key=lambda x: x[3])[:3]
-
-    text = f"📡 <b>TAIPO-BIST RADAR</b>\n🕒 {now_tr().strftime('%d.%m.%Y %H:%M')}\n\n"
-    text += "🟢 <b>EN GÜÇLÜ 3 (AL TAKİP)</b>\n"
-    for s, lp, pc, pct in strongest:
-        text += f"• {s.replace('.IS','')} → {round(lp,2)}  (<b>%{round(pct,2)}</b>)\n"
-
-    text += "\n🔴 <b>EN ZAYIF 3 (İZLE / RİSK)</b>\n"
-    for s, lp, pc, pct in weakest:
-        text += f"• {s.replace('.IS','')} → {round(lp,2)}  (<b>%{round(pct,2)}</b>)\n"
-
-    text += "\nKomut: /taipo"
-    return text
+    # “momentum”: o anki % değişim yüksek olanları al
+    results.sort(key=lambda x: x["change_pct"], reverse=True)
+    return results[:3]
 
 
-# -------------------------
-# AUTO (schedule) runner
-# -------------------------
-def auto_run():
+# =========================
+#   WATCH LOGIC
+# =========================
+def today_str_tr():
+    return datetime.now(TZ).strftime("%Y-%m-%d")
+
+
+def now_str_tr():
+    return datetime.now(TZ).strftime("%d.%m.%Y %H:%M")
+
+
+def in_market_hours_tr():
+    n = datetime.now(TZ)
+    if n.weekday() >= 5:  # 5=Sat, 6=Sun
+        return False
+    return OPEN_HOUR <= n.hour <= CLOSE_HOUR
+
+
+def is_open_pick_window():
+    n = datetime.now(TZ)
+    return (n.hour == OPEN_HOUR) and (0 <= n.minute <= OPEN_PICK_MINUTE_MAX)
+
+
+def reset_for_new_day(state):
+    state["day"] = today_str_tr()
+    state["sent_open_message"] = False
+    state["watch"] = {"symbols": [], "baseline": {}, "picked_at": ""}
+    return state
+
+
+def ensure_today_state(state):
+    if state.get("day") != today_str_tr():
+        state = reset_for_new_day(state)
+    return state
+
+
+def persist_daily_watch(state):
+    # daily_watch.json: bilgilendirme amaçlı
+    dw = {
+        "day": state.get("day", ""),
+        "symbols": state.get("watch", {}).get("symbols", []),
+        "baseline": state.get("watch", {}).get("baseline", {}),
+        "picked_at": state.get("watch", {}).get("picked_at", "")
+    }
+    save_json(DAILY_WATCH_FILE, dw)
+
+
+def build_status_message(state):
+    watch = state.get("watch", {})
+    symbols = watch.get("symbols", [])
+    baseline = watch.get("baseline", {})
+    picked_at = watch.get("picked_at", "")
+
+    if not symbols:
+        return f"📡 TAİPO-BIST RADAR\n🕒 {now_str_tr()}\n\n⚠️ Bugün için takip listesi yok.\n➡️ Açılışta (10:00–10:02) otomatik seçer veya /taipo ile anlık tarar."
+
+    lines = []
+    lines.append(f"📡 TAİPO-BIST TAKİP\n🕒 {now_str_tr()}")
+    if picked_at:
+        lines.append(f"🎯 Seçim: {picked_at}")
+
+    lines.append("\n🟢 GÜNÜN TAKİP 3'LÜSÜ")
+
+    for sym in symbols:
+        q = fetch_quote(sym)
+        if not q:
+            lines.append(f"• {sym.replace('.IS','')} → veri yok")
+            continue
+
+        b = baseline.get(sym)
+        # baz fiyat yoksa prev_close baz al
+        if b is None:
+            b = q["prev_close"]
+
+        # sadece yüzde; TL farkı yazmıyoruz (senin isteğin)
+        pct_from_base = ((q["price"] - float(b)) / float(b)) * 100.0 if b else q["change_pct"]
+
+        lines.append(
+            f"• {sym.replace('.IS','')} → {q['price']}  ({pct_from_base:+.2f}%)"
+        )
+
+    lines.append("\nKomut: /taipo")
+    return "\n".join(lines)
+
+
+def build_open_message(picks):
+    # picks: list of quote dict
+    lines = []
+    lines.append(f"🚀 TAİPO-BIST AÇILIŞ SEÇİMİ (Takip 3)\n🕒 {now_str_tr()}")
+    lines.append("\n🟢 EN GÜÇLÜ 3 (GÜN BOYU TAKİP)")
+    for p in picks:
+        lines.append(f"• {p['symbol'].replace('.IS','')} → {p['price']}  ({p['change_pct']:+.2f}%)")
+    lines.append("\n📌 Not: Bugün kapanışa kadar aynı 3 hisse izlenecek.")
+    lines.append("Komut: /taipo")
+    return "\n".join(lines)
+
+
+def pick_daily_watch_if_needed(state, symbols):
     """
-    Bu sadece main.yml (MODE=AUTO) için:
-    - 10:01'de günlük 3'lü seçer (daily_watch.json yazar)
-    - 10:00-18:00 arası saat başı bu 3'lüye takip mesajı atar
+    Açılış penceresinde ve seçilmemişse 3 hisse seç.
     """
-    reset_daily_if_new_day()
+    if state.get("sent_open_message"):
+        return state, None
 
-    t = now_tr()
-    hm = t.strftime("%H:%M")
+    if not is_open_pick_window():
+        return state, None
 
-    # 10:01 seçimi (en geç 10:02 gelsin diye)
-    if hm in ["10:01", "10:02"]:
-        daily = pick_daily_top3()
-        if daily and TARGET_CHAT_ID:
-            msg = build_watch_message(daily)
-            if msg:
-                send_message(TARGET_CHAT_ID, msg)
+    picks = scan_top3(symbols)
+    if not picks:
+        return state, None
+
+    watch_syms = [p["symbol"] for p in picks]
+    baseline = {p["symbol"]: p["price"] for p in picks}
+
+    state["watch"]["symbols"] = watch_syms
+    state["watch"]["baseline"] = baseline
+    state["watch"]["picked_at"] = now_str_tr()
+    state["sent_open_message"] = True
+
+    persist_daily_watch(state)
+    return state, picks
+
+
+# =========================
+#   MAIN RUN MODES
+# =========================
+def run_auto():
+    """
+    main.yml ile saatlik tetiklenir.
+    - 10:00-10:02 arası ilk defa yakalarsa: seçim yap + açılış mesajı at
+    - diğer saatler: takip mesajı at (eğer takip listesi varsa)
+    """
+    ensure_files()
+    state = load_json(STATE_FILE, {})
+    state = ensure_today_state(state)
+
+    if not in_market_hours_tr():
+        # Piyasa dışıysa sessiz kalalım
+        save_json(STATE_FILE, state)
         return
 
-    # Saat başı takip (10:00-18:00)
-    if t.hour >= 10 and t.hour <= 18 and t.minute == 0:
-        daily = load_daily()
-        if daily and daily.get("date") == t.strftime("%Y-%m-%d") and TARGET_CHAT_ID:
-            msg = build_watch_message(daily)
-            if msg:
-                send_message(TARGET_CHAT_ID, msg)
+    symbols = load_symbols()
+    if not symbols:
+        send_message(f"⚠️ bist100.txt bulunamadı veya boş.\n🕒 {now_str_tr()}")
+        save_json(STATE_FILE, state)
+        return
+
+    # Açılış seçimi gerekiyorsa
+    state, picks = pick_daily_watch_if_needed(state, symbols)
+    if picks:
+        send_message(build_open_message(picks))
+        save_json(STATE_FILE, state)
+        return
+
+    # Saatlik takip mesajı (takip listesi varsa)
+    msg = build_status_message(state)
+    # Eğer takip listesi yoksa her saat spam olmasın: sadece 10:00-10:02 yakalayamadıysa sessiz kalabiliriz
+    # Ama sen "saat başı takip" istedin, bu yüzden yine yolluyoruz.
+    send_message(msg)
+
+    save_json(STATE_FILE, state)
 
 
-# -------------------------
-# LISTEN (command) runner
-# -------------------------
-def listen_run():
+def run_command_listener():
     """
-    Bu sadece command.yml (MODE=LISTEN) için:
-    - Telegram update'leri okur
-    - /taipo gelirse yanıt verir (private veya grup fark etmez)
+    command.yml ile 2 dakikada bir tetiklenir.
+    Telegram getUpdates ile /taipo komutu arar ve cevap verir.
     """
-    state = load_state()
+    ensure_files()
+    state = load_json(STATE_FILE, {})
+    state = ensure_today_state(state)
+
     last_update_id = int(state.get("last_update_id", 0))
-    resp = get_updates(last_update_id + 1)
+    updates = get_updates(last_update_id + 1)
 
-    updates = resp.get("result", []) if isinstance(resp, dict) else []
-    max_update_id = last_update_id
+    max_uid = last_update_id
+    did_reply = False
 
     for upd in updates:
         uid = int(upd.get("update_id", 0))
-        if uid > max_update_id:
-            max_update_id = uid
+        if uid > max_uid:
+            max_uid = uid
 
-        text, chat_id, msg = extract_text_and_chat(upd)
-        if not text or not chat_id:
+        msg = extract_message(upd)
+        if not msg:
             continue
 
-        if is_command(text, "/start"):
-            send_message(chat_id, "✅ TAIPO-BIST hazır.\nKomut: /taipo")
+        text = msg_text(msg)
+        if not text:
             continue
 
-        if is_command(text, "/taipo"):
-            # Eğer daily_watch varsa günün 3'lüsüyle cevap ver, yoksa radar gönder
-            reset_daily_if_new_day()
-            daily = load_daily()
-            today = now_tr().strftime("%Y-%m-%d")
+        # sadece hedef gruptan komut dinle
+        if TARGET_CHAT_ID and not is_target_chat(msg):
+            continue
 
-            if daily and daily.get("date") == today and daily.get("watch"):
-                msg_text = build_watch_message(daily)
+        if text.lower().startswith("/taipo"):
+            # cooldown
+            now_ts = int(time.time())
+            last_ts = int(state.get("last_command_reply_ts", 0))
+            if now_ts - last_ts < REPLY_COOLDOWN_SEC:
+                continue
+
+            # Eğer bugün henüz seçim yapılmadıysa: anlık tarayıp gösterelim (ama günün takip listesi olarak yazmayalım)
+            watch_syms = state.get("watch", {}).get("symbols", [])
+            if not watch_syms:
+                symbols = load_symbols()
+                picks = scan_top3(symbols) if symbols else []
+                if picks:
+                    temp_lines = []
+                    temp_lines.append(f"📡 TAİPO-BIST ANLIK RADAR\n🕒 {now_str_tr()}")
+                    temp_lines.append("\n🟢 ANLIK EN GÜÇLÜ 3")
+                    for p in picks:
+                        temp_lines.append(f"• {p['symbol'].replace('.IS','')} → {p['price']}  ({p['change_pct']:+.2f}%)")
+                    temp_lines.append("\n📌 Not: Günlük takip listesi açılışta (10:00–10:02) sabitlenir.")
+                    temp_lines.append("Komut: /taipo")
+                    send_message("\n".join(temp_lines), chat_id=msg_chat_id(msg))
+                else:
+                    send_message(f"⚠️ Veri çekilemedi.\n🕒 {now_str_tr()}", chat_id=msg_chat_id(msg))
             else:
-                msg_text = build_radar()
+                send_message(build_status_message(state), chat_id=msg_chat_id(msg))
 
-            send_message(chat_id, msg_text)
-            continue
+            state["last_command_reply_ts"] = int(time.time())
+            did_reply = True
 
-    if max_update_id != last_update_id:
-        state["last_update_id"] = max_update_id
-        save_state(state)
+    state["last_update_id"] = max_uid
+    save_json(STATE_FILE, state)
 
 
 def main():
-    if not BOT_TOKEN:
-        return
-
-    if MODE == "LISTEN":
-        listen_run()
+    if MODE == "COMMAND":
+        run_command_listener()
     else:
-        # AUTO default
-        auto_run()
+        run_auto()
 
 
 if __name__ == "__main__":
