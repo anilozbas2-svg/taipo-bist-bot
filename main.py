@@ -1,83 +1,97 @@
 import os
 import json
-import time
 import requests
-from pathlib import Path
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
-CHAT_ID = os.environ.get("CHAT_ID")  # otomatik mesaj için
-RUN_MODE = os.environ.get("RUN_MODE", "cron")  # cron | poll
+CHAT_ID = os.environ["CHAT_ID"]  # grup chat id (ör: -100xxxx)
 
-STATE_FILE = Path("state.json")
+STATE_FILE = "state.json"
 
 
-def tg(method: str, data: dict | None = None):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
-    r = requests.post(url, data=data or {}, timeout=30)
+def load_state():
+    try:
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {"last_update_id": 0}
+
+
+def save_state(state):
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(state, f)
+
+
+def send_message(text: str):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    r = requests.post(url, data={"chat_id": CHAT_ID, "text": text})
+    r.raise_for_status()
+
+
+def get_updates(offset: int):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
+    params = {
+        "timeout": 0,
+        "offset": offset,
+        "allowed_updates": ["message", "edited_message"],
+    }
+    r = requests.get(url, params=params, timeout=30)
     r.raise_for_status()
     return r.json()
 
 
-def send_message(chat_id: str, text: str):
-    tg("sendMessage", {"chat_id": chat_id, "text": text})
+def extract_text(update):
+    msg = update.get("message") or update.get("edited_message") or {}
+    return (msg.get("text") or "").strip(), msg
 
 
-def load_state():
-    if STATE_FILE.exists():
-        return json.loads(STATE_FILE.read_text(encoding="utf-8"))
-    return {"last_update_id": 0}
+def is_from_target_group(msg):
+    chat = msg.get("chat") or {}
+    return str(chat.get("id")) == str(CHAT_ID)
 
 
-def save_state(state):
-    STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+def build_radar_text():
+    # Şimdilik örnek cevap. Sonra buraya TAIPO-BIST radarını koyacağız.
+    return "📡 TAİPO-BİST RADAR\n\n✅ Sistem aktif.\n🟢 Komut: /taipo\n⏱ Otomatik: 2 saatte bir çalışır."
 
 
-def run_cron():
-    if not CHAT_ID:
-        raise RuntimeError("CHAT_ID env yok. GitHub Secrets'e CHAT_ID ekli olmalı.")
-    send_message(CHAT_ID, "✅ TAIPO-BIST bot çalıştı. GitHub Actions OK!")
-
-
-def run_poll():
-    """
-    5 dakikada bir çalışır.
-    /taipo komutunu görürse cevap yazar.
-    last_update_id state.json içinde tutulur (dupe olmasın diye).
-    """
+def main():
     state = load_state()
-    offset = state.get("last_update_id", 0) + 1
+    last_update_id = int(state.get("last_update_id", 0))
 
-    res = tg("getUpdates", {"offset": offset, "limit": 50, "timeout": 0})
-    updates = res.get("result", [])
+    # 1) Telegram'dan yeni mesajları çek (komut var mı bak)
+    data = get_updates(offset=last_update_id + 1)
+    updates = data.get("result", [])
 
-    if not updates:
-        return
+    responded = False
+    max_update_id = last_update_id
 
     for upd in updates:
-        state["last_update_id"] = max(state["last_update_id"], upd.get("update_id", 0))
+        uid = upd.get("update_id", 0)
+        if uid > max_update_id:
+            max_update_id = uid
 
-        msg = upd.get("message") or upd.get("edited_message")
+        text, msg = extract_text(upd)
         if not msg:
             continue
 
-        text = (msg.get("text") or "").strip()
-        chat_id = str(msg["chat"]["id"])
+        # sadece bizim gruptan gelen komutlara cevap ver
+        if is_from_target_group(msg) and text.lower().startswith("/taipo"):
+            send_message(build_radar_text())
+            responded = True
 
-        # Komutlar
-        if text.startswith("/taipo"):
-            reply = (
-                "📡 TAIPO-BIST RADAR\n"
-                "Komut alındı ✅\n\n"
-                "Şimdilik test mesajı gönderiyorum.\n"
-                "Bir sonraki adım: buraya gerçek radar listesini koyacağız."
-            )
-            send_message(chat_id, reply)
+    # state güncelle
+    if max_update_id != last_update_id:
+        state["last_update_id"] = max_update_id
+        save_state(state)
 
-    save_state(state)
+    # 2) Otomatik mesaj (schedule çalışınca atsın)
+    # GitHub Actions her 2 saatte bir çalıştığı için burada otomatik gönderiyoruz.
+    # Not: Eğer sadece /taipo ile cevap isteseydik bunu kapatırdık.
+    send_message("✅ TAİPO-BİST bot çalıştı. GitHub Actions OK!")
+
+    # İstersen burada rapor da atabiliriz:
+    # send_message(build_radar_text())
 
 
 if __name__ == "__main__":
-    if RUN_MODE == "poll":
-        run_poll()
-    else:
-        run_cron()
+    main()
