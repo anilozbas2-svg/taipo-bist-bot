@@ -3,7 +3,8 @@ name: TAIPO-BIST Bot
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 */2 * * *" # 2 saatte bir çalışır
+    # Türkiye saati 10:00 - 18:00 arası, her saat başı (Hafta içi)
+    - cron: "0 7-15 * * 1-5"
 
 jobs:
   run-bot:
@@ -12,12 +13,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Restore state cache
-        uses: actions/cache@v4
-        with:
-          path: state.json
-          key: taipo-bist-state
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -35,9 +30,3 @@ jobs:
           CHAT_ID: ${{ secrets.CHAT_ID }}
         run: |
           python main.py
-
-      - name: Save state cache
-        uses: actions/cache@v4
-        with:
-          path: state.json
-          key: taipo-bist-state
