@@ -1,47 +1,83 @@
 import os
+import json
 import time
 import requests
-from datetime import datetime, timezone, timedelta
+from pathlib import Path
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
-CHAT_ID = os.environ["CHAT_ID"]
+CHAT_ID = os.environ.get("CHAT_ID")  # otomatik mesaj için
+RUN_MODE = os.environ.get("RUN_MODE", "cron")  # cron | poll
 
-def send_message(text: str) -> None:
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": text,
-        "disable_web_page_preview": True
-    }
-    r = requests.post(url, data=payload, timeout=20)
+STATE_FILE = Path("state.json")
+
+
+def tg(method: str, data: dict | None = None):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
+    r = requests.post(url, data=data or {}, timeout=30)
     r.raise_for_status()
+    return r.json()
 
-def now_tr_str() -> str:
-    tr_tz = timezone(timedelta(hours=3))
-    return datetime.now(tr_tz).strftime("%d.%m.%Y %H:%M")
+
+def send_message(chat_id: str, text: str):
+    tg("sendMessage", {"chat_id": chat_id, "text": text})
+
+
+def load_state():
+    if STATE_FILE.exists():
+        return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    return {"last_update_id": 0}
+
+
+def save_state(state):
+    STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def run_cron():
+    if not CHAT_ID:
+        raise RuntimeError("CHAT_ID env yok. GitHub Secrets'e CHAT_ID ekli olmalı.")
+    send_message(CHAT_ID, "✅ TAIPO-BIST bot çalıştı. GitHub Actions OK!")
+
+
+def run_poll():
+    """
+    5 dakikada bir çalışır.
+    /taipo komutunu görürse cevap yazar.
+    last_update_id state.json içinde tutulur (dupe olmasın diye).
+    """
+    state = load_state()
+    offset = state.get("last_update_id", 0) + 1
+
+    res = tg("getUpdates", {"offset": offset, "limit": 50, "timeout": 0})
+    updates = res.get("result", [])
+
+    if not updates:
+        return
+
+    for upd in updates:
+        state["last_update_id"] = max(state["last_update_id"], upd.get("update_id", 0))
+
+        msg = upd.get("message") or upd.get("edited_message")
+        if not msg:
+            continue
+
+        text = (msg.get("text") or "").strip()
+        chat_id = str(msg["chat"]["id"])
+
+        # Komutlar
+        if text.startswith("/taipo"):
+            reply = (
+                "📡 TAIPO-BIST RADAR\n"
+                "Komut alındı ✅\n\n"
+                "Şimdilik test mesajı gönderiyorum.\n"
+                "Bir sonraki adım: buraya gerçek radar listesini koyacağız."
+            )
+            send_message(chat_id, reply)
+
+    save_state(state)
+
 
 if __name__ == "__main__":
-    # GitHub Actions tetik türü: schedule / workflow_dispatch
-    event_name = os.getenv("GITHUB_EVENT_NAME", "unknown")
-    if event_name == "schedule":
-        trigger = "⏰ Otomatik (2 saatte bir)"
-    elif event_name == "workflow_dispatch":
-        trigger = "🖐️ Manuel (Run workflow)"
+    if RUN_MODE == "poll":
+        run_poll()
     else:
-        trigger = f"⚙️ Tetik: {event_name}"
-
-    msg = (
-        f"✅ TAIPO-BIST bot çalıştı.\n"
-        f"🕒 TR Saat: {now_tr_str()}\n"
-        f"{trigger}"
-    )
-
-    # Küçük bir güvenlik: Telegram bazen anlık rate limit atabilir
-    for i in range(3):
-        try:
-            send_message(msg)
-            break
-        except Exception as e:
-            if i == 2:
-                raise
-            time.sleep(2)
+        run_cron()
