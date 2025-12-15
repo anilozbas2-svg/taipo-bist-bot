@@ -1,6 +1,5 @@
 import os
 import json
-import time
 import requests
 from datetime import datetime
 
@@ -8,10 +7,10 @@ BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]  # grup chat id (ör: -100xxxx)
 STATE_FILE = "state.json"
 
-# Şimdilik sağlam çalışan BIST sembolleri (XU100.IS gibi endeksleri şimdilik çıkar)
+# BIST sembolleri (TradingView formatı: BIST:ASELS)
 DEFAULT_WATCHLIST = [
-    "ASELS.IS", "THYAO.IS", "BIMAS.IS", "KCHOL.IS", "SISE.IS",
-    "SAHOL.IS", "TUPRS.IS", "AKBNK.IS", "GARAN.IS", "YKBNK.IS"
+    "ASELS", "THYAO", "BIMAS", "KCHOL", "SISE",
+    "SAHOL", "TUPRS", "AKBNK", "GARAN", "YKBNK"
 ]
 
 def load_state():
@@ -50,81 +49,86 @@ def is_from_target_group(msg):
     chat = msg.get("chat") or {}
     return str(chat.get("id")) == str(CHAT_ID)
 
-# ---------------- Yahoo Finance ----------------
+# ---------------- TradingView (BIST Scanner) ----------------
 
-def fetch_yahoo_quote(symbol: str):
+def fetch_tradingview_quotes(symbols):
     """
-    Yahoo quote endpoint: query1.finance.yahoo.com/v7/finance/quote?symbols=ASELS.IS
-    Dönüş: (price, change_percent) veya Exception
+    TradingView scanner:
+    POST https://scanner.tradingview.com/turkey/scan
+    Döndürür: { "data": [ { "s":"BIST:ASELS", "d":[close, chg, chg_pct] }, ... ] }
     """
-    url = "https://query1.finance.yahoo.com/v7/finance/quote"
-    params = {"symbols": symbol}
+    url = "https://scanner.tradingview.com/turkey/scan"
 
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-        "Accept": "application/json,text/plain,*/*",
-        "Accept-Language": "en-US,en;q=0.9,tr;q=0.8",
-        "Connection": "close",
+    tv_symbols = [f"BIST:{s}" for s in symbols]
+
+    payload = {
+        "symbols": {"tickers": tv_symbols},
+        "columns": [
+            "close",                     # son fiyat
+            "change",                    # değişim
+            "change_abs",                # bazen farklı gelebilir (opsiyon)
+            "change_percent"             # yüzde değişim
+        ]
     }
 
-    r = requests.get(url, params=params, timeout=30, headers=headers)
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Content-Type": "application/json"
+    }
 
-    # 403/429 vs gibi durumları net görelim diye status'u kontrol ediyoruz
+    r = requests.post(url, json=payload, headers=headers, timeout=30)
     if r.status_code != 200:
-        raise Exception(f"HTTP {r.status_code} - {r.text[:120]}")
+        raise Exception(f"TradingView HTTP {r.status_code} - {r.text[:120]}")
 
     data = r.json()
-    result = (((data or {}).get("quoteResponse") or {}).get("result") or [])
-    if not result:
-        raise Exception("Empty result (symbol not found?)")
+    rows = data.get("data") or []
+    out = {}
 
-    item = result[0]
-    price = item.get("regularMarketPrice", None)
-    chg_pct = item.get("regularMarketChangePercent", None)
+    for row in rows:
+        sym = row.get("s", "")
+        d = row.get("d") or []
+        # d[0]=close, d[1]=change, d[3]=change_percent (bazı durumlarda index kayabilir)
+        close = d[0] if len(d) > 0 else None
+        chg = d[1] if len(d) > 1 else None
+        chg_pct = d[3] if len(d) > 3 else None
 
-    if price is None:
-        raise Exception("regularMarketPrice missing")
+        out[sym.replace("BIST:", "")] = (close, chg_pct, chg)
 
-    return price, chg_pct
+    return out
 
 def build_radar_text():
-    rows = []
-    errors = []
-
-    for sym in DEFAULT_WATCHLIST:
-        try:
-            price, chg_pct = fetch_yahoo_quote(sym)
-            if chg_pct is None:
-                chg_str = "n/a"
-            else:
-                chg_str = f"{chg_pct:.2f}%"
-            rows.append((sym, price, chg_str))
-        except Exception as e:
-            errors.append(f"{sym}: {str(e)}")
-
-    # Başlık
     now = datetime.now().strftime("%d.%m.%Y %H:%M")
     text = f"📡 TAIPO-BIST RADAR\n🕒 {now}\n"
 
-    if not rows:
-        text += "\n⚠️ Veri çekilemedi."
-        if errors:
-            text += "\n\nHata örnekleri:\n" + "\n".join([f"• {e}" for e in errors[:8]])
+    try:
+        quotes = fetch_tradingview_quotes(DEFAULT_WATCHLIST)
+    except Exception as e:
+        return (text + f"\n⚠️ Veri çekilemedi (TradingView).\nHata: {str(e)[:400]}")[:3800]
+
+    rows = []
+    missing = []
+
+    for s in DEFAULT_WATCHLIST:
+        if s in quotes and quotes[s][0] is not None:
+            price, chg_pct, _chg = quotes[s]
+            chg_str = "n/a" if chg_pct is None else f"{float(chg_pct):.2f}%"
+            rows.append((s, price, chg_str))
         else:
-            text += "\n(Hata detayı gelmedi)"
+            missing.append(s)
+
+    if not rows:
+        text += "\n⚠️ Veri geldi ama fiyat yok."
+        if missing:
+            text += "\nEksik: " + ", ".join(missing)
         return text[:3800]
 
-    # Liste
     text += "\nSemboller:\n"
     for sym, price, chg_str in rows:
         text += f"• {sym} → {price} ({chg_str})\n"
 
-    # Eğer hata varsa en sona ekle (çok uzamasın)
-    if errors:
-        text += "\n⚠️ Bazı semboller çekilemedi:\n"
-        text += "\n".join([f"• {e}" for e in errors[:6]])
+    if missing:
+        text += "\n⚠️ Eksik kalanlar: " + ", ".join(missing)
 
-    # Komut hatırlatma
     text += "\n\nKomut: /taipo"
     return text[:3800]
 
@@ -134,38 +138,31 @@ def main():
     state = load_state()
     last_update_id = int(state.get("last_update_id", 0))
 
-    # 1) Telegram komut dinleme (sadece /taipo)
+    # 1) /taipo komutu dinle
     try:
         data = get_updates(offset=last_update_id + 1)
         updates = data.get("result", []) or []
-
         max_update_id = last_update_id
 
         for upd in updates:
             uid = upd.get("update_id", 0)
-            if uid > max_update_id:
-                max_update_id = uid
+            max_update_id = max(max_update_id, uid)
 
             text, msg = extract_text(upd)
             if not text or not msg:
                 continue
 
-            # sadece hedef gruptan /taipo gelirse yanıt ver
             if is_from_target_group(msg) and text.lower().startswith("/taipo"):
                 send_message(build_radar_text())
 
-        # state güncelle
         if max_update_id != last_update_id:
             state["last_update_id"] = max_update_id
             save_state(state)
 
     except Exception as e:
-        # Komut dinlemede sorun olsa bile scheduled mesajı atmaya devam edelim
         send_message(f"⚠️ TAIPO-BIST RADAR\nTelegram update kontrolünde hata: {str(e)[:250]}")
 
-    # 2) Scheduled çalışmada otomatik mesaj (her 2 saatte bir)
-    # GitHub Actions schedule ile burası zaten tetikleniyor.
-    # İstersen bunu kapatabiliriz; şimdilik açık:
+    # 2) Otomatik (schedule) mesaj
     try:
         send_message(build_radar_text())
     except Exception as e:
