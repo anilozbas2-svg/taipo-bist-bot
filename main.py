@@ -1,17 +1,17 @@
 import os
 import json
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
-CHAT_ID = os.environ["CHAT_ID"]  # grup chat id (ör: -100xxxx)
-STATE_FILE = "state.json"
+CHAT_ID = os.environ["CHAT_ID"]  # grup id: -100xxxxxx veya özel chat id
 
-# BIST sembolleri (TradingView formatı: BIST:ASELS)
-DEFAULT_WATCHLIST = [
-    "ASELS", "THYAO", "BIMAS", "KCHOL", "SISE",
-    "SAHOL", "TUPRS", "AKBNK", "GARAN", "YKBNK"
-]
+STATE_FILE = "state.json"
+BIST_LIST_FILE = "bist100.txt"   # repo ana dizininde olacak
+
+IST_TZ = ZoneInfo("Europe/Istanbul")
+
 
 def load_state():
     try:
@@ -20,14 +20,94 @@ def load_state():
     except Exception:
         return {"last_update_id": 0}
 
+
 def save_state(state):
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
+
 
 def send_message(text: str):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     r = requests.post(url, data={"chat_id": CHAT_ID, "text": text})
     r.raise_for_status()
+
+
+def read_bist100_symbols():
+    """
+    bist100.txt satır satır: ASELS, THYAO, BIMAS ... (sadece kod)
+    """
+    if not os.path.exists(BIST_LIST_FILE):
+        raise FileNotFoundError(f"{BIST_LIST_FILE} bulunamadı. Repo ana dizinine ekle.")
+
+    symbols = []
+    with open(BIST_LIST_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            s = line.strip().upper()
+            if not s or s.startswith("#"):
+                continue
+            symbols.append(s)
+
+    # 100 olması ideal ama az/çok olursa da çalışır
+    return symbols
+
+
+def yahoo_quote(symbols):
+    """
+    Yahoo Finance public quote endpoint.
+    symbols: ['ASELS','THYAO',...]
+    returns: list of dict {symbol, price, chg, chg_pct}
+    """
+    # Yahoo BIST sembol formatı: ASELS.IS
+    yahoo_syms = [f"{s}.IS" for s in symbols]
+    url = "https://query1.finance.yahoo.com/v7/finance/quote"
+    params = {"symbols": ",".join(yahoo_syms)}
+
+    r = requests.get(url, params=params, timeout=20)
+    r.raise_for_status()
+    data = r.json()
+
+    results = []
+    for item in data.get("quoteResponse", {}).get("result", []):
+        ysym = item.get("symbol", "")
+        base = ysym.replace(".IS", "")
+        price = item.get("regularMarketPrice")
+        chg = item.get("regularMarketChange")
+        chg_pct = item.get("regularMarketChangePercent")
+
+        if price is None or chg is None or chg_pct is None:
+            continue
+
+        results.append({
+            "symbol": base,
+            "price": float(price),
+            "chg": float(chg),
+            "chg_pct": float(chg_pct),
+        })
+
+    return results
+
+
+def build_radar_message(rows, now_tr: datetime):
+    rows_sorted = sorted(rows, key=lambda x: x["chg_pct"], reverse=True)
+    top3 = rows_sorted[:3]
+    bot3 = rows_sorted[-3:][::-1]  # en kötüden iyiye doğru
+
+    header = f"📡 TAIPO-BIST RADAR\n🕒 {now_tr.strftime('%d.%m.%Y %H:%M')}"
+
+    lines = [header, ""]
+    lines.append("🔥 En Güçlü 3 (ALIM yapılabilir ✅):")
+    for r in top3:
+        lines.append(f"• {r['symbol']} → {r['price']:.2f} ({r['chg_pct']:.2f}%, Δ {r['chg']:.2f})")
+
+    lines.append("")
+    lines.append("🧊 En Zayıf 3 (İZLE ⚠️):")
+    for r in bot3:
+        lines.append(f"• {r['symbol']} → {r['price']:.2f} ({r['chg_pct']:.2f}%, Δ {r['chg']:.2f})")
+
+    lines.append("")
+    lines.append("Komut: /taipo")
+    return "\n".join(lines)
+
 
 def get_updates(offset: int):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
@@ -36,151 +116,74 @@ def get_updates(offset: int):
         "offset": offset,
         "allowed_updates": ["message", "edited_message"],
     }
-    r = requests.get(url, params=params, timeout=30)
+    r = requests.get(url, params=params, timeout=20)
     r.raise_for_status()
     return r.json()
 
-def extract_text(update):
+
+def extract_message(update):
     msg = update.get("message") or update.get("edited_message") or {}
     text = (msg.get("text") or "").strip()
-    return text, msg
-
-def is_from_target_group(msg):
     chat = msg.get("chat") or {}
-    return str(chat.get("id")) == str(CHAT_ID)
+    chat_id = chat.get("id")
+    return text, chat_id
 
-# ---------------- TradingView (BIST Scanner) ----------------
-
-def fetch_tradingview_quotes(symbols):
-    """
-    TradingView scanner:
-    POST https://scanner.tradingview.com/turkey/scan
-
-    ÖNEMLİ: change_percent alanı yok -> HTTP 400 yapıyor.
-    Kullanılabilen alanlar: close, change, change_abs
-    """
-    url = "https://scanner.tradingview.com/turkey/scan"
-    tv_symbols = [f"BIST:{s}" for s in symbols]
-
-    payload = {
-        "symbols": {"tickers": tv_symbols},
-        "columns": [
-            "close",       # son fiyat
-            "change",      # genelde yüzde değişim
-            "change_abs"   # mutlak değişim
-        ]
-    }
-
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Content-Type": "application/json"
-    }
-
-    r = requests.post(url, json=payload, headers=headers, timeout=30)
-    if r.status_code != 200:
-        raise Exception(f"TradingView HTTP {r.status_code} - {r.text[:200]}")
-
-    data = r.json()
-    rows = data.get("data") or []
-    out = {}
-
-    for row in rows:
-        sym = (row.get("s") or "").replace("BIST:", "")
-        d = row.get("d") or []
-        close = d[0] if len(d) > 0 else None
-        chg = d[1] if len(d) > 1 else None       # % değişim olma ihtimali yüksek
-        chg_abs = d[2] if len(d) > 2 else None   # mutlak değişim
-
-        out[sym] = (close, chg, chg_abs)
-
-    return out
-
-def build_radar_text():
-    now = datetime.now().strftime("%d.%m.%Y %H:%M")
-    text = f"📡 TAIPO-BIST RADAR\n🕒 {now}\n"
-
-    try:
-        quotes = fetch_tradingview_quotes(DEFAULT_WATCHLIST)
-    except Exception as e:
-        return (text + f"\n⚠️ Veri çekilemedi (TradingView).\nHata: {str(e)[:500]}")[:3800]
-
-    rows = []
-    missing = []
-
-    for s in DEFAULT_WATCHLIST:
-        if s in quotes and quotes[s][0] is not None:
-            price, chg, chg_abs = quotes[s]
-
-            # change bazen yüzde bazen başka format olabilir diye güvenli format
-            chg_str = "n/a"
-            if chg is not None:
-                try:
-                    chg_str = f"{float(chg):.2f}%"
-                except Exception:
-                    chg_str = str(chg)
-
-            abs_str = ""
-            if chg_abs is not None:
-                try:
-                    abs_str = f", Δ {float(chg_abs):.2f}"
-                except Exception:
-                    abs_str = f", Δ {chg_abs}"
-
-            rows.append((s, price, chg_str, abs_str))
-        else:
-            missing.append(s)
-
-    if not rows:
-        text += "\n⚠️ Veri geldi ama fiyat yok."
-        if missing:
-            text += "\nEksik: " + ", ".join(missing)
-        return text[:3800]
-
-    text += "\nSemboller:\n"
-    for sym, price, chg_str, abs_str in rows:
-        text += f"• {sym} → {price} ({chg_str}{abs_str})\n"
-
-    if missing:
-        text += "\n⚠️ Eksik kalanlar: " + ", ".join(missing)
-
-    text += "\n\nKomut: /taipo"
-    return text[:3800]
-
-# ---------------- Main ----------------
 
 def main():
+    now_tr = datetime.now(timezone.utc).astimezone(IST_TZ)
+
+    # 1) Komutla cevap (/taipo)
     state = load_state()
     last_update_id = int(state.get("last_update_id", 0))
 
-    # 1) /taipo komutu dinle
     try:
-        data = get_updates(offset=last_update_id + 1)
-        updates = data.get("result", []) or []
-        max_update_id = last_update_id
+        updates = get_updates(last_update_id + 1).get("result", [])
+    except Exception:
+        updates = []
 
-        for upd in updates:
-            uid = upd.get("update_id", 0)
-            max_update_id = max(max_update_id, uid)
+    responded = False
+    max_update_id = last_update_id
 
-            text, msg = extract_text(upd)
-            if not text or not msg:
-                continue
+    for upd in updates:
+        uid = upd.get("update_id", 0)
+        if uid > max_update_id:
+            max_update_id = uid
 
-            if is_from_target_group(msg) and text.lower().startswith("/taipo"):
-                send_message(build_radar_text())
+        text, chat_id = extract_message(upd)
+        if not text:
+            continue
 
-        if max_update_id != last_update_id:
-            state["last_update_id"] = max_update_id
-            save_state(state)
+        # sadece aynı chat'ten gelen komutlara cevap
+        if str(chat_id) == str(CHAT_ID) and text.lower().startswith("/taipo"):
+            try:
+                symbols = read_bist100_symbols()
+                rows = yahoo_quote(symbols)
+                if not rows:
+                    send_message("⚠️ TAIPO-BIST RADAR\nVeri çekilemedi (boş sonuç).")
+                else:
+                    send_message(build_radar_message(rows, now_tr))
+                responded = True
+            except Exception as e:
+                send_message(f"⚠️ TAIPO-BIST RADAR\nVeri çekilemedi.\nHata: {e}")
 
-    except Exception as e:
-        send_message(f"⚠️ TAIPO-BIST RADAR\nTelegram update kontrolünde hata: {str(e)[:250]}")
+    # state güncelle
+    if max_update_id != last_update_id:
+        state["last_update_id"] = max_update_id
+        save_state(state)
 
-    # 2) Otomatik (schedule) mesaj
-    try:
-        send_message(build_radar_text())
-    except Exception as e:
-        send_message(f"⚠️ TAIPO-BIST RADAR\nOtomatik gönderimde hata: {str(e)[:250]}")
+    # 2) Otomatik saatlik mesaj (schedule ile)
+    # Komutla cevap verdiyse bile sorun değil: istersen burada otomatiği kapatırız.
+    if not responded:
+        try:
+            symbols = read_bist100_symbols()
+            rows = yahoo_quote(symbols)
+            if not rows:
+                send_message("⚠️ TAIPO-BIST RADAR\nVeri çekilemedi (boş sonuç).")
+            else:
+                send_message(build_radar_message(rows, now_tr))
+        except Exception as e:
+            send_message(f"⚠️ TAIPO-BIST RADAR\nVeri çekilemedi.\nHata: {e}")
+
 
 if __name__ == "__main__":
     main()
