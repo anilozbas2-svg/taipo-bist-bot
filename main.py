@@ -55,19 +55,19 @@ def fetch_tradingview_quotes(symbols):
     """
     TradingView scanner:
     POST https://scanner.tradingview.com/turkey/scan
-    Döndürür: { "data": [ { "s":"BIST:ASELS", "d":[close, chg, chg_pct] }, ... ] }
+
+    ÖNEMLİ: change_percent alanı yok -> HTTP 400 yapıyor.
+    Kullanılabilen alanlar: close, change, change_abs
     """
     url = "https://scanner.tradingview.com/turkey/scan"
-
     tv_symbols = [f"BIST:{s}" for s in symbols]
 
     payload = {
         "symbols": {"tickers": tv_symbols},
         "columns": [
-            "close",                     # son fiyat
-            "change",                    # değişim
-            "change_abs",                # bazen farklı gelebilir (opsiyon)
-            "change_percent"             # yüzde değişim
+            "close",       # son fiyat
+            "change",      # genelde yüzde değişim
+            "change_abs"   # mutlak değişim
         ]
     }
 
@@ -78,21 +78,20 @@ def fetch_tradingview_quotes(symbols):
 
     r = requests.post(url, json=payload, headers=headers, timeout=30)
     if r.status_code != 200:
-        raise Exception(f"TradingView HTTP {r.status_code} - {r.text[:120]}")
+        raise Exception(f"TradingView HTTP {r.status_code} - {r.text[:200]}")
 
     data = r.json()
     rows = data.get("data") or []
     out = {}
 
     for row in rows:
-        sym = row.get("s", "")
+        sym = (row.get("s") or "").replace("BIST:", "")
         d = row.get("d") or []
-        # d[0]=close, d[1]=change, d[3]=change_percent (bazı durumlarda index kayabilir)
         close = d[0] if len(d) > 0 else None
-        chg = d[1] if len(d) > 1 else None
-        chg_pct = d[3] if len(d) > 3 else None
+        chg = d[1] if len(d) > 1 else None       # % değişim olma ihtimali yüksek
+        chg_abs = d[2] if len(d) > 2 else None   # mutlak değişim
 
-        out[sym.replace("BIST:", "")] = (close, chg_pct, chg)
+        out[sym] = (close, chg, chg_abs)
 
     return out
 
@@ -103,16 +102,31 @@ def build_radar_text():
     try:
         quotes = fetch_tradingview_quotes(DEFAULT_WATCHLIST)
     except Exception as e:
-        return (text + f"\n⚠️ Veri çekilemedi (TradingView).\nHata: {str(e)[:400]}")[:3800]
+        return (text + f"\n⚠️ Veri çekilemedi (TradingView).\nHata: {str(e)[:500]}")[:3800]
 
     rows = []
     missing = []
 
     for s in DEFAULT_WATCHLIST:
         if s in quotes and quotes[s][0] is not None:
-            price, chg_pct, _chg = quotes[s]
-            chg_str = "n/a" if chg_pct is None else f"{float(chg_pct):.2f}%"
-            rows.append((s, price, chg_str))
+            price, chg, chg_abs = quotes[s]
+
+            # change bazen yüzde bazen başka format olabilir diye güvenli format
+            chg_str = "n/a"
+            if chg is not None:
+                try:
+                    chg_str = f"{float(chg):.2f}%"
+                except Exception:
+                    chg_str = str(chg)
+
+            abs_str = ""
+            if chg_abs is not None:
+                try:
+                    abs_str = f", Δ {float(chg_abs):.2f}"
+                except Exception:
+                    abs_str = f", Δ {chg_abs}"
+
+            rows.append((s, price, chg_str, abs_str))
         else:
             missing.append(s)
 
@@ -123,8 +137,8 @@ def build_radar_text():
         return text[:3800]
 
     text += "\nSemboller:\n"
-    for sym, price, chg_str in rows:
-        text += f"• {sym} → {price} ({chg_str})\n"
+    for sym, price, chg_str, abs_str in rows:
+        text += f"• {sym} → {price} ({chg_str}{abs_str})\n"
 
     if missing:
         text += "\n⚠️ Eksik kalanlar: " + ", ".join(missing)
