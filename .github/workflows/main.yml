@@ -3,7 +3,7 @@ name: TAIPO-BIST Bot
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 */2 * * *"  # 2 saatte bir çalışır
+    - cron: "0 */2 * * *" # 2 saatte bir çalışır
 
 jobs:
   run-bot:
@@ -13,6 +13,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Restore state cache
+        uses: actions/cache@v4
+        with:
+          path: state.json
+          key: taipo-bist-state
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -21,7 +27,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
       - name: Run bot
         env:
@@ -29,3 +35,9 @@ jobs:
           CHAT_ID: ${{ secrets.CHAT_ID }}
         run: |
           python main.py
+
+      - name: Save state cache
+        uses: actions/cache@v4
+        with:
+          path: state.json
+          key: taipo-bist-state
