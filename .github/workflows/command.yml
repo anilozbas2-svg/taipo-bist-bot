@@ -1,26 +1,16 @@
-name: TAIPO Command Listener
+name: TAIPO BIST - COMMAND
 
 on:
-  workflow_dispatch:
   schedule:
-    # TR 09:00–20:55 arası (UTC 06:00–17:55) her 5 dk kontrol
-    - cron: "*/5 6-17 * * *"
-    # TR 21:00 (UTC 18:00) tek kontrol
-    - cron: "0 18 * * *"
+    - cron: "*/1 * * * *"
+  workflow_dispatch:
 
 jobs:
-  command-bot:
+  run-command:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Restore state cache
-        uses: actions/cache@v4
-        with:
-          path: state.json
-          key: taipo-bist-state
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -30,18 +20,11 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install yfinance requests
+          pip install -r requirements.txt
 
-      - name: Run command listener
+      - name: Run COMMAND
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
           MODE: COMMAND
-        run: |
-          python main.py
-
-      - name: Save state cache
-        uses: actions/cache@v4
-        with:
-          path: state.json
-          key: taipo-bist-state
+        run: python main.py
