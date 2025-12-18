@@ -47,6 +47,7 @@ REPLY_COOLDOWN_SEC = 20
 NEWS_MAX_ITEMS = 5
 NEWS_STATE_KEY = "news_seen"  # state.json içinde tutulur
 
+
 # =========================
 # IO HELPERS
 # =========================
@@ -66,6 +67,7 @@ def save_json(path: str, data):
 
 
 def ensure_files():
+    # state.json yoksa oluştur
     if not os.path.exists(STATE_FILE):
         save_json(STATE_FILE, {
             "last_update_id": 0,
@@ -94,7 +96,6 @@ def load_symbols():
             if not s.endswith(".IS"):
                 s = s + ".IS"
             syms.append(s)
-    # duplicate temizle
     return list(dict.fromkeys(syms))
 
 
@@ -165,7 +166,7 @@ def now_key_minute():
 
 
 def is_weekday_tr():
-    # Pazartesi=0 ... Pazar=6  -> hafta içi <5
+    # Pazartesi=0 ... Pazar=6
     return datetime.now(TZ).weekday() < 5
 
 
@@ -179,9 +180,10 @@ def ensure_today_state(state):
         state["watch"] = {"symbols": [], "baseline": {}, "picked_at": ""}
         state["sent_pick_message"] = False
         state["last_track_sent_key"] = ""
-        # news_seen'i her gün sıfırlamayalım (spam engeli için 7 gün tutacağız)
+        # news_seen'i her gün sıfırlamıyoruz (7 gün spam engeli)
         if NEWS_STATE_KEY not in state:
             state[NEWS_STATE_KEY] = {}
+
     return state
 
 
@@ -268,7 +270,6 @@ def scan_quotes(symbols):
 def pick_early_breakouts(quotes, n=3, lo=0.15, hi=0.80):
     # sadece erken kırılım bandı
     pool = [q for q in quotes if lo <= float(q["change_pct"]) <= hi]
-    # band içinde en güçlüden seç
     pool_sorted = sorted(pool, key=lambda x: x["change_pct"], reverse=True)
     return pool_sorted[:n]
 
@@ -326,7 +327,7 @@ def pick_new_news_for_message(state, items, max_items=NEWS_MAX_ITEMS):
     now_ts = int(time.time())
     seen_map = state.get(NEWS_STATE_KEY, {}) or {}
 
-    # çok büyümesin diye temizlik (son 7 gün dışını sil)
+    # 7 gün dışını sil
     cutoff = now_ts - 7 * 24 * 3600
     seen_map = {k: v for k, v in seen_map.items() if int(v) >= cutoff}
 
@@ -338,7 +339,6 @@ def pick_new_news_for_message(state, items, max_items=NEWS_MAX_ITEMS):
         fresh.append(it)
 
     selected = fresh[:max_items]
-
     for it in selected:
         seen_map[it["link"]] = now_ts
 
@@ -348,10 +348,10 @@ def pick_new_news_for_message(state, items, max_items=NEWS_MAX_ITEMS):
 
 def build_news_block(selected_items):
     if not selected_items:
-        return "📰 Haber Radar (son 60 dk)\n• (Yeni haber yakalanmadı)"
+        return "📰 Haber Radar\n• (Yeni haber yakalanmadı)"
 
     lines = []
-    lines.append("📰 Haber Radar (son 60 dk)")
+    lines.append("📰 Haber Radar")
     for it in selected_items:
         lines.append(f"• {it['title']}\n  {it['link']}")
     return "\n".join(lines)
@@ -439,7 +439,8 @@ def build_track_message(state):
 
         pct_from_base = ((float(q["price"]) - float(base)) / float(base)) * 100.0
         lines.append(
-            f"{clean_sym(sym):<6} {float(base):>8.2f} → {q['price']:>8.2f}   {trend_emoji(pct_from_base)}  {pct_str(pct_from_base)}"
+            f"{clean_sym(sym):<6} {float(base):>8.2f} → {q['price']:>8.2f}   "
+            f"{trend_emoji(pct_from_base)}  {pct_str(pct_from_base)}"
         )
 
     lines.append("")
@@ -548,7 +549,6 @@ def run_command_listener():
             if now_ts - last_ts < REPLY_COOLDOWN_SEC:
                 continue
 
-            # varsa takip mesajını döndür
             if state.get("watch", {}).get("symbols"):
                 reply = build_track_message(state)
                 state, reply = append_news_to_text(state, reply)
