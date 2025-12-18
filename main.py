@@ -3,9 +3,11 @@ import json
 import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from urllib.parse import quote
 
 import requests
 import yfinance as yf
+import feedparser
 
 # =========================
 # CONFIG
@@ -39,6 +41,11 @@ TRACK_MINUTE_TR = 10
 
 REPLY_COOLDOWN_SEC = 20
 
+# =========================
+# NEWS (RSS) - BIST GENEL
+# =========================
+NEWS_MAX_ITEMS = 5
+NEWS_STATE_KEY = "news_seen"  # state.json içinde tutulur
 
 # =========================
 # IO HELPERS
@@ -70,7 +77,8 @@ def ensure_files():
                 "picked_at": ""
             },
             "sent_pick_message": False,
-            "last_track_sent_key": ""  # "YYYY-MM-DD HH:MM"
+            "last_track_sent_key": "",  # "YYYY-MM-DD HH:MM"
+            NEWS_STATE_KEY: {}          # link -> unix ts
         })
 
 
@@ -102,7 +110,7 @@ def send_message(text: str, chat_id: str = None):
     payload = {
         "chat_id": chat_id,
         "text": text,
-        "disable_web_page_preview": True
+        "disable_web_page_preview": False
     }
     try:
         r = requests.post(f"{TELEGRAM_API}/sendMessage", json=payload, timeout=20)
@@ -156,16 +164,31 @@ def now_key_minute():
     return datetime.now(TZ).strftime("%Y-%m-%d %H:%M")
 
 
+def is_weekday_tr():
+    # Pazartesi=0 ... Pazar=6  -> hafta içi <5
+    return datetime.now(TZ).weekday() < 5
+
+
 def ensure_today_state(state):
+    # geriye dönük uyumluluk (eski state.json)
+    if NEWS_STATE_KEY not in state:
+        state[NEWS_STATE_KEY] = {}
+
     if state.get("day") != today_str_tr():
         state["day"] = today_str_tr()
         state["watch"] = {"symbols": [], "baseline": {}, "picked_at": ""}
         state["sent_pick_message"] = False
         state["last_track_sent_key"] = ""
+        # news_seen'i her gün sıfırlamayalım (spam engeli için 7 gün tutacağız)
+        if NEWS_STATE_KEY not in state:
+            state[NEWS_STATE_KEY] = {}
     return state
 
 
 def in_pick_window():
+    # Sadece hafta içi
+    if not is_weekday_tr():
+        return False
     n = datetime.now(TZ)
     if n.hour != PICK_START_HOUR:
         return False
@@ -173,6 +196,9 @@ def in_pick_window():
 
 
 def is_track_time_now():
+    # Sadece hafta içi
+    if not is_weekday_tr():
+        return False
     n = datetime.now(TZ)
     return (n.hour in TRACK_HOURS_TR) and (n.minute == TRACK_MINUTE_TR)
 
@@ -199,8 +225,8 @@ def fetch_quote(symbol: str):
         prev_close = None
 
         if fi:
-            price = fi.get("last_price") or fi.get("lastPrice")
-            prev_close = fi.get("previous_close") or fi.get("previousClose")
+            price = fi.get("last_price") or fi.get("lastPrice") or fi.get("last_price")
+            prev_close = fi.get("previous_close") or fi.get("previousClose") or fi.get("previous_close")
 
         # fallback: history
         if price is None or prev_close is None:
@@ -245,6 +271,100 @@ def pick_early_breakouts(quotes, n=3, lo=0.15, hi=0.80):
     # band içinde en güçlüden seç
     pool_sorted = sorted(pool, key=lambda x: x["change_pct"], reverse=True)
     return pool_sorted[:n]
+
+
+# =========================
+# NEWS (RSS) - HELPERS
+# =========================
+def _google_news_rss_url(query: str) -> str:
+    q = quote(query)
+    return f"https://news.google.com/rss/search?q={q}&hl=tr&gl=TR&ceid=TR:tr"
+
+
+def fetch_bist_news_items():
+    """
+    Google News RSS'ten BIST genel haberleri çeker.
+    Dönen: [{title, link, published}]
+    """
+    queries = [
+        'BIST OR "Borsa İstanbul" OR "Borsa Istanbul"',
+        '"BIST 100" OR BIST100',
+        'KAP OR "Kamuyu Aydınlatma Platformu"',
+        'SPK OR "Sermaye Piyasası Kurulu"',
+        'temettü OR bedelsiz OR "pay geri alım" OR "sermaye artırımı"',
+        'ihale OR sözleşme OR anlaşma OR yatırım'
+    ]
+
+    items = []
+    for q in queries:
+        url = _google_news_rss_url(q)
+        feed = feedparser.parse(url)
+        for e in feed.entries[:10]:
+            title = (e.get("title") or "").strip()
+            link = (e.get("link") or "").strip()
+            published = (e.get("published") or "").strip()
+            if title and link:
+                items.append({"title": title, "link": link, "published": published})
+
+    # tekrarları temizle (link bazlı)
+    uniq = []
+    seen = set()
+    for it in items:
+        if it["link"] in seen:
+            continue
+        seen.add(it["link"])
+        uniq.append(it)
+
+    return uniq
+
+
+def pick_new_news_for_message(state, items, max_items=NEWS_MAX_ITEMS):
+    """
+    Daha önce gönderilmeyen haberleri seçer.
+    state içinde news_seen sözlüğüne kaydeder.
+    """
+    now_ts = int(time.time())
+    seen_map = state.get(NEWS_STATE_KEY, {}) or {}
+
+    # çok büyümesin diye temizlik (son 7 gün dışını sil)
+    cutoff = now_ts - 7 * 24 * 3600
+    seen_map = {k: v for k, v in seen_map.items() if int(v) >= cutoff}
+
+    fresh = []
+    for it in items:
+        key = it["link"]
+        if key in seen_map:
+            continue
+        fresh.append(it)
+
+    selected = fresh[:max_items]
+
+    for it in selected:
+        seen_map[it["link"]] = now_ts
+
+    state[NEWS_STATE_KEY] = seen_map
+    return state, selected
+
+
+def build_news_block(selected_items):
+    if not selected_items:
+        return "📰 Haber Radar (son 60 dk)\n• (Yeni haber yakalanmadı)"
+
+    lines = []
+    lines.append("📰 Haber Radar (son 60 dk)")
+    for it in selected_items:
+        lines.append(f"• {it['title']}\n  {it['link']}")
+    return "\n".join(lines)
+
+
+def append_news_to_text(state, base_text: str):
+    try:
+        items = fetch_bist_news_items()
+        state, selected = pick_new_news_for_message(state, items, NEWS_MAX_ITEMS)
+        news_block = build_news_block(selected)
+        return state, f"{base_text}\n\n{news_block}"
+    except Exception:
+        return state, base_text
 
 
 # =========================
@@ -303,6 +423,8 @@ def build_track_message(state):
 
     if not symbols:
         lines.append("⚠️ Bugün için takip listesi yok. (10:00–10:10 arası oluşur)")
+        lines.append("")
+        lines.append("⌨️ /taipo")
         return "\n".join(lines)
 
     for sym in symbols:
@@ -316,7 +438,9 @@ def build_track_message(state):
             base = q["prev_close"]
 
         pct_from_base = ((float(q["price"]) - float(base)) / float(base)) * 100.0
-        lines.append(f"{clean_sym(sym):<6} {float(base):>8.2f} → {q['price']:>8.2f}   {trend_emoji(pct_from_base)}  {pct_str(pct_from_base)}")
+        lines.append(
+            f"{clean_sym(sym):<6} {float(base):>8.2f} → {q['price']:>8.2f}   {trend_emoji(pct_from_base)}  {pct_str(pct_from_base)}"
+        )
 
     lines.append("")
     lines.append("⌨️ /taipo")
@@ -375,7 +499,9 @@ def run_auto():
     # 1) 10:00–10:10 arası yakalarsa anında gönder
     state, picks = try_pick_once(state, symbols)
     if picks:
-        send_message(build_pick_message(picks, state["watch"]["picked_at"]))
+        text = build_pick_message(picks, state["watch"]["picked_at"])
+        state, text = append_news_to_text(state, text)
+        send_message(text)
         save_json(STATE_FILE, state)
         return
 
@@ -383,7 +509,9 @@ def run_auto():
     if is_track_time_now():
         if state.get("watch", {}).get("symbols"):
             if should_send_track_now(state):
-                send_message(build_track_message(state))
+                text = build_track_message(state)
+                state, text = append_news_to_text(state, text)
+                send_message(text)
                 state["last_track_sent_key"] = now_key_minute()
 
     save_json(STATE_FILE, state)
@@ -422,15 +550,18 @@ def run_command_listener():
 
             # varsa takip mesajını döndür
             if state.get("watch", {}).get("symbols"):
-                send_message(build_track_message(state), chat_id=msg_chat_id(msg))
+                reply = build_track_message(state)
+                state, reply = append_news_to_text(state, reply)
+                send_message(reply, chat_id=msg_chat_id(msg))
             else:
-                send_message(
+                base = (
                     f"📡 TAIPO • ERKEN KIRILIM RADAR\n🕒 {now_str_tr()}\n\n"
                     f"⚠️ Bugün liste henüz oluşmadı.\n"
-                    f"⏰ Seçim aralığı: 10:00–10:10\n"
-                    f"🎯 Kriter: {EARLY_MIN_PCT:.2f}% – {EARLY_MAX_PCT:.2f}%\n",
-                    chat_id=msg_chat_id(msg)
+                    f"⏰ Seçim aralığı: 10:00–10:10 (hafta içi)\n"
+                    f"🎯 Kriter: {EARLY_MIN_PCT:.2f}% – {EARLY_MAX_PCT:.2f}%\n"
                 )
+                state, base = append_news_to_text(state, base)
+                send_message(base, chat_id=msg_chat_id(msg))
 
             state["last_command_reply_ts"] = now_ts
 
