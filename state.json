@@ -1,3 +1,12 @@
 {
-  "last_update_id": 0
+  "last_update_id": 0,
+  "last_command_reply_ts": 0,
+  "day": "",
+  "watch": {
+    "symbols": [],
+    "baseline": {},
+    "picked_at": ""
+  },
+  "sent_pick_message": false,
+  "last_track_sent_key": ""
 }
