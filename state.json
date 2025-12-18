@@ -8,5 +8,9 @@
     "picked_at": ""
   },
   "sent_pick_message": false,
-  "last_track_sent_key": ""
+  "last_track_sent_key": "",
+  "news": {
+    "seen": [],
+    "last_sent_key": ""
+  }
 }
