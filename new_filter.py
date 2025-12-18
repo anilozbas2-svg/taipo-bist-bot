@@ -1,192 +1,234 @@
 import hashlib
-from datetime import datetime
+import re
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import feedparser
 
 TZ = ZoneInfo("Europe/Istanbul")
 
-# ==========================================================
-# RSS HABER KAYNAKLARI (BIST/Finans genel)
-# Not: RSS linkleri zaman zaman değişebilir; kod hata vermez,
-# sadece o kaynağı pas geçer.
-# ==========================================================
-RSS_SOURCES = [
-    {"name": "KAP", "url": "https://www.kap.org.tr/tr/Rss"},          # KAP genel RSS
-    {"name": "Foreks", "url": "https://www.foreks.com/rss"},         # Genel finans RSS
-    {"name": "Dunya", "url": "https://www.dunya.com/rss/finans"},    # Finans RSS
-    {"name": "BloombergHT", "url": "https://www.bloomberght.com/rss"}# Genel RSS
+# ============================================================
+# RSS KAYNAKLARI (BIST + ekonomi genel)
+# Not: Kaynakları artırabiliriz; şimdilik stabil + hızlı olanlar
+# ============================================================
+RSS_FEEDS = [
+    # Investing.com Türkiye - Borsa
+    "https://tr.investing.com/rss/news_301.rss",
+    # Investing.com Türkiye - Ekonomi
+    "https://tr.investing.com/rss/news_285.rss",
+    # Reuters (genel) - bazı RSS'ler bölgesel çalışır; feedparser tolere eder
+    "https://feeds.reuters.com/reuters/businessNews",
 ]
 
-# ==========================================================
-# ANAHTAR KELİMELER (BIST GENEL)
-# İstersen sonra genişletiriz
-# ==========================================================
-DEFAULT_KEYWORDS = [
-    "bedelsiz",
-    "temettü",
-    "kar payı",
-    "geri alım",
-    "pay geri alım",
-    "sermaye artırım",
-    "sermaye azaltım",
-    "bilanço",
-    "finansal sonuç",
-    "kredi",
-    "ihale",
-    "sözleşme",
-    "yatırım",
-    "ortaklık",
-    "satın alma",
-    "birleşme",
-    "kap bildirimi",
-    "finansman",
-    "borçlanma",
-    "tahvil",
-    "halka arz",
-    "SPK",
-    "rekabet kurumu",
-    "ceza",
-    "vergi",
-    "dava",
-    "lisans",
-    "üretim",
-    "kapasite"
+# ============================================================
+# ÖNEMLİ HABER ANAHTARLARI (puanlama)
+# ============================================================
+IMPORTANT_KEYWORDS = [
+    # Şirket / KAP tipi kritikler
+    "bedelsiz", "temettü", "geri alım", "pay geri alım", "sermaye", "sermaye artırımı",
+    "ihale", "sözleşme", "anlaşma", "ortaklık", "yatırım", "kap", "spk",
+    "bilanço", "finansal sonuç", "kâr", "zarar",
+    "ceza", "soruşturma", "dava", "iflas", "konkordato",
+    # Makro
+    "tcmb", "merkez bankası", "faiz", "enflasyon", "kur", "cds"
 ]
 
-# ==========================================================
-# UTILS
-# ==========================================================
-def _hash_item(title: str, link: str) -> str:
-    raw = (title or "").strip() + "||" + (link or "").strip()
-    return hashlib.sha256(raw.encode("utf-8", errors="ignore")).hexdigest()
+# Genel BIST/Ekonomi kelimeleri (daha düşük puan)
+GENERAL_KEYWORDS = [
+    "bist", "borsa istanbul", "endeks", "hisse", "hisseler", "piyasa",
+    "dolar", "euro", "altın", "petrol"
+]
 
 
-def fetch_news(max_items_per_source: int = 12):
+# ============================================================
+# Yardımcılar
+# ============================================================
+def _now_tr() -> datetime:
+    return datetime.now(TZ)
+
+def _norm_text(s: str) -> str:
+    s = (s or "").strip()
+    s = s.lower()
+    s = re.sub(r"\s+", " ", s)
+    return s
+
+def _hash_id(title: str, link: str) -> str:
+    base = (_norm_text(title) + "|" + (link or "")).encode("utf-8")
+    return hashlib.sha1(base).hexdigest()  # kısa ve stabil
+
+def _score_item(title: str, summary: str) -> int:
+    text = _norm_text(title) + " " + _norm_text(summary)
+
+    score = 0
+
+    # Önemli kelimeler: +3
+    for kw in IMPORTANT_KEYWORDS:
+        if kw in text:
+            score += 3
+
+    # Genel kelimeler: +1
+    for kw in GENERAL_KEYWORDS:
+        if kw in text:
+            score += 1
+
+    return score
+
+def _parse_published_dt(entry) -> datetime | None:
     """
-    RSS kaynaklarından haberleri çeker.
-    Returns list of dict:
-      { id, title, link, published, source }
+    RSS entry published/parsing: feedparser bazen struct_time verir.
+    Yoksa None döner.
+    """
+    # feedparser: entry.get("published_parsed")
+    pp = entry.get("published_parsed")
+    if pp:
+        # struct_time -> datetime (UTC varsayılır gibi davranabilir)
+        # biz TR'ye çevirme yerine "now - age" kontrolünü çok katı yapmıyoruz
+        try:
+            dt_utc = datetime(*pp[:6])
+            # tz-naive; TR'ye "yaklaşık" kabul edelim
+            return dt_utc.replace(tzinfo=TZ)
+        except Exception:
+            pass
+    return None
+
+def _within_window(dt: datetime | None, start: datetime, end: datetime) -> bool:
+    """
+    dt yoksa: 'dupe' kontrolüne güvenip serbest bırakırız.
+    dt varsa: pencere içinde mi bakarız.
+    """
+    if dt is None:
+        return True
+    return start <= dt <= end
+
+
+# ============================================================
+# Ana API: 3 bülten için haber çıkar
+# ============================================================
+def collect_news_items(
+    seen_ids: list[str],
+    window_start: datetime,
+    window_end: datetime,
+    max_items: int = 3
+) -> tuple[list[dict], list[str]]:
+    """
+    - RSS'lerden haberleri çek
+    - seen_ids içinde olmayanları al
+    - zaman penceresine uyanları seç
+    - puanlayıp en iyi max_items döndür
+    Dönen:
+      items: [{title, link, score, id}]
+      updated_seen_ids
     """
     items = []
-    for src in RSS_SOURCES:
+
+    for url in RSS_FEEDS:
         try:
-            feed = feedparser.parse(src["url"])
-            source_name = src.get("name") or getattr(feed, "feed", {}).get("title", "RSS")
+            feed = feedparser.parse(url)
+            for entry in feed.entries[:50]:
+                title = entry.get("title", "") or ""
+                link = entry.get("link", "") or ""
+                summary = entry.get("summary", "") or entry.get("description", "") or ""
 
-            entries = getattr(feed, "entries", []) or []
-            for e in entries[:max_items_per_source]:
-                title = (getattr(e, "title", "") or "").strip()
-                link = (getattr(e, "link", "") or "").strip()
-                published = (getattr(e, "published", "") or getattr(e, "updated", "") or "").strip()
-
-                if not title or not link:
+                hid = _hash_id(title, link)
+                if hid in seen_ids:
                     continue
 
+                published_dt = _parse_published_dt(entry)
+                if not _within_window(published_dt, window_start, window_end):
+                    continue
+
+                score = _score_item(title, summary)
+
+                # Çok alakasızları ele (hiç anahtar yoksa 0 olabilir, yine de bırakabiliriz)
+                # Burada kalsın, sonra sıralamada alta düşer.
+
                 items.append({
-                    "id": _hash_item(title, link),
-                    "title": title,
-                    "link": link,
-                    "published": published,
-                    "source": source_name
+                    "id": hid,
+                    "title": title.strip(),
+                    "link": link.strip(),
+                    "score": score
                 })
         except Exception:
-            # Kaynak patlasa bile bot çökmeyecek
             continue
 
-    return items
+    # Skora göre sırala, eşitlikte en yeni yoksa link/title stabil olsun
+    items_sorted = sorted(items, key=lambda x: (x["score"], x["title"]), reverse=True)
+
+    picked = items_sorted[:max_items]
+
+    # picked'leri seen_ids'e ekle
+    for it in picked:
+        seen_ids.append(it["id"])
+
+    # seen_ids şişmesin: son 200 id tut (rolling)
+    if len(seen_ids) > 200:
+        seen_ids = seen_ids[-200:]
+
+    return picked, seen_ids
 
 
-def filter_news(items, keywords=None):
+# ============================================================
+# 3 BÜLTEN PENCERELERİ
+# ============================================================
+def get_news_window(slot_name: str) -> tuple[datetime, datetime]:
     """
-    Başlıkta keyword geçenleri seçer.
+    slot_name:
+      - "yesterday" : dün 17:10 sonrası -> bugün 09:30
+      - "midday"    : bugün 09:30 -> bugün 10:30
+      - "close"     : bugün 10:30 -> bugün 17:40
     """
-    if keywords is None:
-        keywords = DEFAULT_KEYWORDS
+    now = _now_tr()
+    today = now.date()
+    start = end = now
 
-    kw = [k.lower().strip() for k in keywords if k and k.strip()]
-    out = []
+    if slot_name == "yesterday":
+        # Dün 17:10
+        yday = today - timedelta(days=1)
+        start = datetime(yday.year, yday.month, yday.day, 17, 10, tzinfo=TZ)
+        end = datetime(today.year, today.month, today.day, 9, 30, tzinfo=TZ)
 
-    for it in items:
-        title = (it.get("title") or "").lower()
-        if any(k in title for k in kw):
-            out.append(it)
+    elif slot_name == "midday":
+        start = datetime(today.year, today.month, today.day, 9, 30, tzinfo=TZ)
+        end = datetime(today.year, today.month, today.day, 10, 30, tzinfo=TZ)
 
-    return out
+    elif slot_name == "close":
+        start = datetime(today.year, today.month, today.day, 10, 30, tzinfo=TZ)
+        end = datetime(today.year, today.month, today.day, 17, 40, tzinfo=TZ)
 
+    else:
+        # fallback: son 24 saat
+        start = now - timedelta(hours=24)
+        end = now
 
-def dedupe_with_state(news_items, state: dict, max_seen_keep: int = 800):
-    """
-    state['news']['seen'] listesini kullanarak tekrarları engeller.
-    Returns: (new_items, updated_state)
-    """
-    if "news" not in state or not isinstance(state["news"], dict):
-        state["news"] = {"seen": [], "last_sent_key": ""}
-
-    seen = state["news"].get("seen", [])
-    if not isinstance(seen, list):
-        seen = []
-
-    seen_set = set(seen)
-    new_items = []
-
-    for it in news_items:
-        hid = it.get("id")
-        if not hid:
-            continue
-        if hid in seen_set:
-            continue
-        new_items.append(it)
-        seen_set.add(hid)
-
-    # seen listesini büyütüp şişirmeyelim
-    state["news"]["seen"] = list(seen_set)[-max_seen_keep:]
-
-    return new_items, state
+    return start, end
 
 
-def format_news_block(news_items, limit: int = 6) -> str:
-    """
-    Telegram’a atılacak haber bloğu metni.
-    """
-    if not news_items:
-        return ""
+# ============================================================
+# Mesaj formatı
+# ============================================================
+def format_news_message(slot_name: str, items: list[dict]) -> str:
+    now = _now_tr().strftime("%d.%m.%Y %H:%M")
 
-    now_str = datetime.now(TZ).strftime("%d.%m.%Y %H:%M")
+    title_map = {
+        "yesterday": "🕘 DÜNKÜ HABERLER (17:10 sonrası)",
+        "midday": "🕥 GÜNDÜZ HABERLERİ",
+        "close": "🕔 KAPANIŞ HABERLERİ"
+    }
+    header = title_map.get(slot_name, "📰 HABER BÜLTENİ")
 
     lines = []
-    lines.append("📰 TAIPO • BIST HABER RADARI")
-    lines.append(f"🕒 {now_str}")
+    lines.append("📌 TAIPO • BIST HABER RADAR")
+    lines.append(f"{header} — {now}")
     lines.append("")
+    if not items:
+        lines.append("🔥 Önemli Haber: Yok (bu aralıkta filtreye takılan haber çıkmadı)")
+        return "\n".join(lines)
 
-    for n in news_items[:limit]:
-        title = n.get("title", "").strip()
-        link = n.get("link", "").strip()
-        source = n.get("source", "").strip()
-
-        if source:
-            lines.append(f"• ({source}) {title}")
-        else:
-            lines.append(f"• {title}")
-
-        lines.append(f"  🔗 {link}")
+    lines.append("🔥 ÖNEMLİ (Max 3)")
+    for i, it in enumerate(items, 1):
+        lines.append(f"{i}) {it['title']}")
+        if it.get("link"):
+            lines.append(f"🔗 {it['link']}")
         lines.append("")
 
     return "\n".join(lines).strip()
-
-
-def build_news_message_and_update_state(state: dict, keywords=None, limit: int = 6):
-    """
-    MAIN.PY burayı çağıracak.
-    - RSS çek
-    - keyword filtrele
-    - state ile dedupe yap
-    - mesaj oluştur
-    Returns: (message_text_or_empty, updated_state)
-    """
-    all_items = fetch_news()
-    filtered = filter_news(all_items, keywords=keywords)
-    new_items, state = dedupe_with_state(filtered, state)
-
-    msg = format_news_block(new_items, limit=limit)
-    return msg, state
