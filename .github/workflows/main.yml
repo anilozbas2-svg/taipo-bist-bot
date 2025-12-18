@@ -2,18 +2,7 @@ name: TAIPO BIST - AUTO
 
 on:
   schedule:
-    # 10:00–10:09 TR  => 07:00–07:09 UTC  (1 dakikada 1, toplam 10 tarama)
-    - cron: "0-9 7 * * *"
-
-    # Saatlik takip (TR 11:10–17:10) => UTC 08:10–14:10
-    - cron: "10 8 * * *"
-    - cron: "10 9 * * *"
-    - cron: "10 10 * * *"
-    - cron: "10 11 * * *"
-    - cron: "10 12 * * *"
-    - cron: "10 13 * * *"
-    - cron: "10 14 * * *"
-
+    - cron: "* * * * *"   # HER DAKİKA çalışır (UTC)
   workflow_dispatch:
 
 concurrency:
