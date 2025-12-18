@@ -16,7 +16,7 @@ TZ = ZoneInfo("Europe/Istanbul")
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 TARGET_CHAT_ID = os.getenv("CHAT_ID", "").strip()  # group chat id like -100...
-MODE = os.getenv("MODE", "AUTO").strip().upper()   # AUTO or COMMAND
+MODE = os.getenv("MODE", "AUTO").strip().upper()   # AUTO or COMMAND (AUTO olsa bile komutlar çalışır)
 
 STATE_FILE = "state.json"
 SYMBOLS_FILE = "bist100.txt"
@@ -44,9 +44,14 @@ REPLY_COOLDOWN_SEC = 20
 # =========================
 # NEWS (RSS) - BIST GENEL
 # =========================
-NEWS_MAX_ITEMS = 5
+NEWS_MAX_ITEMS = 3
 NEWS_STATE_KEY = "news_seen"  # state.json içinde tutulur
 
+IMPORTANT_KEYWORDS = [
+    "KAP", "SPK", "bedelsiz", "temettü", "geri alım", "pay geri alım", "sermaye",
+    "ihale", "sözleşme", "anlaşma", "yatırım", "kredi", "derecelendirme",
+    "halka arz", "ceza", "soruşturma", "faiz", "enflasyon", "TCMB"
+]
 
 # =========================
 # IO HELPERS
@@ -102,7 +107,7 @@ def load_symbols():
 # =========================
 # TELEGRAM
 # =========================
-def send_message(text: str, chat_id: str = None):
+def send_message(text: str, chat_id: str = None, parse_mode: str = "HTML"):
     if not chat_id:
         chat_id = TARGET_CHAT_ID
     if not BOT_TOKEN or not chat_id:
@@ -111,7 +116,8 @@ def send_message(text: str, chat_id: str = None):
     payload = {
         "chat_id": chat_id,
         "text": text,
-        "disable_web_page_preview": False
+        "disable_web_page_preview": True,  # PRO: link kalabalığını azaltır
+        "parse_mode": parse_mode
     }
     try:
         r = requests.post(f"{TELEGRAM_API}/sendMessage", json=payload, timeout=20)
@@ -171,7 +177,7 @@ def is_weekday_tr():
 
 
 def ensure_today_state(state):
-    # geriye dönük uyumluluk (eski state.json)
+    # geriye dönük uyumluluk
     if NEWS_STATE_KEY not in state:
         state[NEWS_STATE_KEY] = {}
 
@@ -180,10 +186,8 @@ def ensure_today_state(state):
         state["watch"] = {"symbols": [], "baseline": {}, "picked_at": ""}
         state["sent_pick_message"] = False
         state["last_track_sent_key"] = ""
-        # news_seen'i her gün sıfırlamıyoruz (7 gün spam engeli)
         if NEWS_STATE_KEY not in state:
             state[NEWS_STATE_KEY] = {}
-
     return state
 
 
@@ -268,7 +272,6 @@ def scan_quotes(symbols):
 
 
 def pick_early_breakouts(quotes, n=3, lo=0.15, hi=0.80):
-    # sadece erken kırılım bandı
     pool = [q for q in quotes if lo <= float(q["change_pct"]) <= hi]
     pool_sorted = sorted(pool, key=lambda x: x["change_pct"], reverse=True)
     return pool_sorted[:n]
@@ -319,6 +322,20 @@ def fetch_bist_news_items():
     return uniq
 
 
+def _news_score(title: str) -> int:
+    t = (title or "").lower()
+    score = 0
+    for kw in IMPORTANT_KEYWORDS:
+        if kw.lower() in t:
+            score += 2
+    # ekstra küçük bonuslar
+    if "son dakika" in t:
+        score += 2
+    if "açıklama" in t:
+        score += 1
+    return score
+
+
 def pick_new_news_for_message(state, items, max_items=NEWS_MAX_ITEMS):
     """
     Daha önce gönderilmeyen haberleri seçer.
@@ -338,7 +355,10 @@ def pick_new_news_for_message(state, items, max_items=NEWS_MAX_ITEMS):
             continue
         fresh.append(it)
 
-    selected = fresh[:max_items]
+    # 🔥 önemli olanları öne çek
+    fresh_sorted = sorted(fresh, key=lambda x: _news_score(x["title"]), reverse=True)
+    selected = fresh_sorted[:max_items]
+
     for it in selected:
         seen_map[it["link"]] = now_ts
 
@@ -347,13 +367,19 @@ def pick_new_news_for_message(state, items, max_items=NEWS_MAX_ITEMS):
 
 
 def build_news_block(selected_items):
-    if not selected_items:
-        return "📰 Haber Radar\n• (Yeni haber yakalanmadı)"
-
+    # PRO kısa format: max 3, linkler başlığa gömülü
     lines = []
-    lines.append("📰 Haber Radar")
+    lines.append("📰 <b>Haber Radar</b> (max 3 • 🔥 önemli seçilir)")
+    if not selected_items:
+        lines.append("• Yeni haber yakalanmadı")
+        return "\n".join(lines)
+
     for it in selected_items:
-        lines.append(f"• {it['title']}\n  {it['link']}")
+        title = it["title"]
+        link = it["link"]
+        badge = "🔥 " if _news_score(title) >= 2 else ""
+        # linki başlığa göm (uzun URL görünmesin)
+        lines.append(f"• {badge}<a href=\"{link}\">{_escape_html(title)}</a>")
     return "\n".join(lines)
 
 
@@ -382,23 +408,32 @@ def pct_str(pct: float):
     return f"+{pct:.2f}%" if pct >= 0 else f"{pct:.2f}%"
 
 
+def _escape_html(s: str) -> str:
+    if s is None:
+        return ""
+    return (s.replace("&", "&amp;")
+              .replace("<", "&lt;")
+              .replace(">", "&gt;")
+              .replace("\"", "&quot;"))
+
+
 def build_pick_message(picks, picked_at):
     lines = []
-    lines.append("✅ 10:00–10:10 Erken Kırılım – PREMIUM v1")
+    lines.append("✅ <b>10:00–10:10 Erken Kırılım</b> – PREMIUM v1")
     lines.append("")
     lines.append("┌──────────────────────────────")
-    lines.append("│ 📊 TAIPO • ERKEN KIRILIM RADAR")
+    lines.append("│ 📊 <b>TAIPO • ERKEN KIRILIM RADAR</b>")
     lines.append(f"│ {picked_at}")
     lines.append("└──────────────────────────────")
     lines.append("")
-    lines.append(f"🎯 Kriter: {EARLY_MIN_PCT:.2f}% – {EARLY_MAX_PCT:.2f}% (henüz tren kaçmadan)")
+    lines.append(f"🎯 Kriter: <b>{EARLY_MIN_PCT:.2f}% – {EARLY_MAX_PCT:.2f}%</b> (henüz tren kaçmadan)")
     lines.append("")
-    lines.append("🟢 3 ERKEN KIRILIM (Bugün sabit takip)")
+    lines.append("🟢 <b>3 ERKEN KIRILIM</b> (Bugün sabit takip)")
     for q in picks:
         sym = clean_sym(q["symbol"])
-        lines.append(f"{sym:<6} {q['price']:>8}   {trend_emoji(q['change_pct'])}  {pct_str(q['change_pct'])}")
+        lines.append(f"<code>{sym:<6}</code> {q['price']:>8}   {trend_emoji(q['change_pct'])}  <b>{pct_str(q['change_pct'])}</b>")
     lines.append("")
-    lines.append("🕒 Takip mesajları: 11:10 • 12:10 • 13:10 • 14:10 • 15:10 • 16:10 • 17:10")
+    lines.append("🕒 Takip: 11:10 • 12:10 • 13:10 • 14:10 • 15:10 • 16:10 • 17:10")
     lines.append("⌨️ Komut: /taipo")
     return "\n".join(lines)
 
@@ -410,16 +445,16 @@ def build_track_message(state):
     picked_at = watch.get("picked_at", "")
 
     lines = []
-    lines.append("✅ Saatlik Takip – PREMIUM v1 (Aynı 3 Hisse)")
+    lines.append("✅ <b>Saatlik Takip</b> – PREMIUM v1 (Aynı 3 Hisse)")
     lines.append("")
     lines.append("┌──────────────────────────────")
-    lines.append("│ 🕒 TAIPO • TAKİP ÇİZELGESİ")
+    lines.append("│ 🕒 <b>TAIPO • TAKİP ÇİZELGESİ</b>")
     lines.append(f"│ {now_str_tr()}")
     lines.append("└──────────────────────────────")
     lines.append("")
     if picked_at:
-        lines.append(f"🎯 Seçim Zamanı: {picked_at}")
-    lines.append("")
+        lines.append(f"🎯 Seçim Zamanı: <b>{picked_at}</b>")
+        lines.append("")
 
     if not symbols:
         lines.append("⚠️ Bugün için takip listesi yok. (10:00–10:10 arası oluşur)")
@@ -430,7 +465,7 @@ def build_track_message(state):
     for sym in symbols:
         q = fetch_quote(sym)
         if not q:
-            lines.append(f"{clean_sym(sym):<6}  → veri yok")
+            lines.append(f"<code>{clean_sym(sym):<6}</code>  → veri yok")
             continue
 
         base = baseline.get(sym)
@@ -439,8 +474,8 @@ def build_track_message(state):
 
         pct_from_base = ((float(q["price"]) - float(base)) / float(base)) * 100.0
         lines.append(
-            f"{clean_sym(sym):<6} {float(base):>8.2f} → {q['price']:>8.2f}   "
-            f"{trend_emoji(pct_from_base)}  {pct_str(pct_from_base)}"
+            f"<code>{clean_sym(sym):<6}</code> {float(base):>8.2f} → {q['price']:>8.2f}   "
+            f"{trend_emoji(pct_from_base)}  <b>{pct_str(pct_from_base)}</b>"
         )
 
     lines.append("")
@@ -484,45 +519,9 @@ def try_pick_once(state, symbols):
 
 
 # =========================
-# RUN MODES
+# COMMANDS (AUTO olsa bile çalışır)
 # =========================
-def run_auto():
-    ensure_files()
-    state = load_json(STATE_FILE, {})
-    state = ensure_today_state(state)
-
-    symbols = load_symbols()
-    if not symbols:
-        send_message(f"⚠️ bist100.txt bulunamadı veya boş.\n🕒 {now_str_tr()}")
-        save_json(STATE_FILE, state)
-        return
-
-    # 1) 10:00–10:10 arası yakalarsa anında gönder
-    state, picks = try_pick_once(state, symbols)
-    if picks:
-        text = build_pick_message(picks, state["watch"]["picked_at"])
-        state, text = append_news_to_text(state, text)
-        send_message(text)
-        save_json(STATE_FILE, state)
-        return
-
-    # 2) Takip saatleri (11:10–17:10)
-    if is_track_time_now():
-        if state.get("watch", {}).get("symbols"):
-            if should_send_track_now(state):
-                text = build_track_message(state)
-                state, text = append_news_to_text(state, text)
-                send_message(text)
-                state["last_track_sent_key"] = now_key_minute()
-
-    save_json(STATE_FILE, state)
-
-
-def run_command_listener():
-    ensure_files()
-    state = load_json(STATE_FILE, {})
-    state = ensure_today_state(state)
-
+def process_commands(state):
     last_update_id = int(state.get("last_update_id", 0))
     updates = get_updates(last_update_id + 1)
     max_uid = last_update_id
@@ -539,10 +538,21 @@ def run_command_listener():
         if not text:
             continue
 
-        # sadece hedef gruptan dinle
+        # TARGET_CHAT_ID set ise sadece o gruptan dinle
         if TARGET_CHAT_ID and not is_target_chat(msg):
             continue
 
+        # /id komutu
+        if text.lower().startswith("/id"):
+            cid = msg_chat_id(msg)
+            reply = (
+                f"🆔 <b>Chat ID</b>: <code>{_escape_html(cid)}</code>\n"
+                f"🕒 {now_str_tr()}"
+            )
+            send_message(reply, chat_id=cid)
+            continue
+
+        # /taipo komutu
         if text.lower().startswith("/taipo"):
             now_ts = int(time.time())
             last_ts = int(state.get("last_command_reply_ts", 0))
@@ -555,10 +565,10 @@ def run_command_listener():
                 send_message(reply, chat_id=msg_chat_id(msg))
             else:
                 base = (
-                    f"📡 TAIPO • ERKEN KIRILIM RADAR\n🕒 {now_str_tr()}\n\n"
+                    f"📡 <b>TAIPO • ERKEN KIRILIM RADAR</b>\n🕒 {now_str_tr()}\n\n"
                     f"⚠️ Bugün liste henüz oluşmadı.\n"
-                    f"⏰ Seçim aralığı: 10:00–10:10 (hafta içi)\n"
-                    f"🎯 Kriter: {EARLY_MIN_PCT:.2f}% – {EARLY_MAX_PCT:.2f}%\n"
+                    f"⏰ Seçim aralığı: <b>10:00–10:10</b> (hafta içi)\n"
+                    f"🎯 Kriter: <b>{EARLY_MIN_PCT:.2f}% – {EARLY_MAX_PCT:.2f}%</b>\n"
                 )
                 state, base = append_news_to_text(state, base)
                 send_message(base, chat_id=msg_chat_id(msg))
@@ -566,14 +576,51 @@ def run_command_listener():
             state["last_command_reply_ts"] = now_ts
 
     state["last_update_id"] = max_uid
-    save_json(STATE_FILE, state)
+    return state
+
+
+# =========================
+# AUTO (cron)
+# =========================
+def run_auto(state):
+    symbols = load_symbols()
+    if not symbols:
+        send_message(f"⚠️ bist100.txt bulunamadı veya boş.\n🕒 {now_str_tr()}")
+        return state
+
+    # 1) 10:00–10:10 arası yakalarsa anında gönder
+    state, picks = try_pick_once(state, symbols)
+    if picks:
+        text = build_pick_message(picks, state["watch"]["picked_at"])
+        state, text = append_news_to_text(state, text)
+        send_message(text)
+        return state
+
+    # 2) Takip saatleri (11:10–17:10)
+    if is_track_time_now():
+        if state.get("watch", {}).get("symbols"):
+            if should_send_track_now(state):
+                text = build_track_message(state)
+                state, text = append_news_to_text(state, text)
+                send_message(text)
+                state["last_track_sent_key"] = now_key_minute()
+
+    return state
 
 
 def main():
-    if MODE == "COMMAND":
-        run_command_listener()
-    else:
-        run_auto()
+    ensure_files()
+    state = load_json(STATE_FILE, {})
+    state = ensure_today_state(state)
+
+    # 1) Komutları her çalıştırmada dinle (AUTO olsa bile)
+    state = process_commands(state)
+
+    # 2) Cron işleri
+    if MODE != "COMMAND":
+        state = run_auto(state)
+
+    save_json(STATE_FILE, state)
 
 
 if __name__ == "__main__":
