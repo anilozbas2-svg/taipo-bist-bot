@@ -2,7 +2,8 @@ name: TAIPO BIST - AUTO
 
 on:
   schedule:
-    - cron: "* * * * *"   # HER DAKİKA çalışır (UTC)
+    # Hafta içi 07:00-15:59 UTC => TR 10:00-18:59 arası
+    - cron: "*/5 7-15 * * 1-5"
   workflow_dispatch:
 
 concurrency:
@@ -12,9 +13,21 @@ concurrency:
 jobs:
   run-auto:
     runs-on: ubuntu-latest
+    timeout-minutes: 6
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # ✅ state.json kalıcı olsun (spam ve tekrarların ana ilacı)
+      - name: Restore state cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            state.json
+          key: taipo-state-${{ github.run_id }}
+          restore-keys: |
+            taipo-state-
 
       - name: Setup Python
         uses: actions/setup-python@v5
