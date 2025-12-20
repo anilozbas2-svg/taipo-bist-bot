@@ -17,6 +17,7 @@ TZ = ZoneInfo("Europe/Istanbul")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 TARGET_CHAT_ID = os.getenv("CHAT_ID", "").strip()  # group chat id like -100...
 MODE = os.getenv("MODE", "AUTO").strip().upper()   # AUTO or COMMAND
+DEBUG = os.getenv("DEBUG", "0").strip() == "1"
 
 STATE_FILE = "state.json"
 SYMBOLS_FILE = "bist100.txt"
@@ -48,21 +49,23 @@ TRACK_MINUTE_TR = 10
 REPLY_COOLDOWN_SEC = 20
 ID_COOLDOWN_SEC = 60
 
-# ✅ IMPORTANT:
-# GitHub Actions cron gecikmesi olacağı için (1-5 dk),
-# komutların "bayat" sayılmaması lazım.
-# 600 saniye = 10 dk tolerans.
-COMMAND_MAX_AGE_SEC = 600
+# ✅ Anti-spam + GitHub Actions gecikmesine tolerans:
+# Varsayılan 600 sn (10 dk). İstersen Secrets/ENV ile override edebilirsin.
+COMMAND_MAX_AGE_SEC = int(os.getenv("COMMAND_MAX_AGE_SEC", "600"))
 
 # =========================
 # NEWS (RSS) - PRO MODE
 # =========================
 NEWS_MAX_ITEMS = 3
-NEWS_STATE_KEY = "news_seen"  # state.json içinde tutulur (title->ts)
+NEWS_STATE_KEY = "news_seen"
 
 # =========================
 # IO HELPERS
 # =========================
+def log(*args):
+    if DEBUG:
+        print("[DEBUG]", *args)
+
 def load_json(path: str, default):
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -118,6 +121,7 @@ def send_message(text: str, chat_id: str = None):
     if not chat_id:
         chat_id = TARGET_CHAT_ID
     if not BOT_TOKEN or not chat_id:
+        log("send_message skipped: missing BOT_TOKEN or chat_id")
         return False
 
     payload = {
@@ -127,9 +131,12 @@ def send_message(text: str, chat_id: str = None):
         "disable_web_page_preview": True
     }
     try:
-        r = requests.post(f"{TELEGRAM_API}/sendMessage", json=payload, timeout=25)
+        r = requests.post(f"{TELEGRAM_API}/sendMessage", json=payload, timeout=20)
+        if r.status_code != 200:
+            log("send_message failed:", r.status_code, r.text[:500])
         return r.status_code == 200
-    except Exception:
+    except Exception as e:
+        log("send_message exception:", repr(e))
         return False
 
 def get_updates(offset: int):
@@ -137,10 +144,14 @@ def get_updates(offset: int):
         return []
     params = {"timeout": 0, "offset": offset}
     try:
-        r = requests.get(f"{TELEGRAM_API}/getUpdates", params=params, timeout=25)
+        r = requests.get(f"{TELEGRAM_API}/getUpdates", params=params, timeout=20)
         data = r.json()
-        return data.get("result", []) if data.get("ok") else []
-    except Exception:
+        if not data.get("ok"):
+            log("get_updates not ok:", data)
+            return []
+        return data.get("result", [])
+    except Exception as e:
+        log("get_updates exception:", repr(e))
         return []
 
 def extract_message(update: dict):
@@ -162,7 +173,6 @@ def is_target_chat(msg: dict):
     return (TARGET_CHAT_ID and cid == str(TARGET_CHAT_ID))
 
 def is_fresh_command(msg: dict) -> bool:
-    # Telegram 'date' unix time (saniye)
     d = msg.get("date")
     if not isinstance(d, int):
         return True
@@ -250,7 +260,8 @@ def fetch_quote(symbol: str):
             "prev_close": round(float(prev_close), 2),
             "change_pct": round(float(change_pct), 2),
         }
-    except Exception:
+    except Exception as e:
+        log("fetch_quote error", symbol, repr(e))
         return None
 
 def scan_quotes(symbols):
@@ -276,7 +287,7 @@ def pick_breakouts_with_auto_band(quotes, n=3):
     return [], None
 
 # =========================
-# NEWS (RSS) - HELPERS
+# NEWS (RSS)
 # =========================
 def _google_news_rss_url(query: str) -> str:
     q = quote(query)
@@ -333,7 +344,6 @@ def pick_new_news_for_message(state, items, max_items=NEWS_MAX_ITEMS):
     now_ts = int(time.time())
     seen_map = state.get(NEWS_STATE_KEY, {}) or {}
 
-    # 7 gün dışını sil
     cutoff = now_ts - 7 * 24 * 3600
     seen_map = {k: v for k, v in seen_map.items() if int(v) >= cutoff}
 
@@ -361,7 +371,7 @@ def build_news_block(selected_items):
     for it in selected_items:
         title = _escape_html(it["title"])
         link = it["link"]
-        lines.append(f"• 🔥 {title} — <a href=\"{link}\">Haberi aç</a>")
+        lines.append(f"• 🔥 {title}  —  <a href=\"{link}\">Haberi aç</a>")
     return "\n".join(lines)
 
 def append_news_to_text(state, base_text: str):
@@ -372,7 +382,8 @@ def append_news_to_text(state, base_text: str):
         if not news_block:
             return state, base_text
         return state, f"{base_text}\n\n{news_block}"
-    except Exception:
+    except Exception as e:
+        log("news error", repr(e))
         return state, base_text
 
 # =========================
@@ -390,7 +401,7 @@ def pct_str(pct: float):
 def build_pick_message(picks, picked_at, band_used):
     lo, hi = band_used
     lines = []
-    lines.append("✅ <b>10:00–10:10 Erken Kırılım</b> – PREMIUM v3")
+    lines.append("✅ <b>10:00–10:10 Erken Kırılım</b> – PREMIUM v3.1")
     lines.append("")
     lines.append("┌──────────────────────────────")
     lines.append("│ 📊 <b>TAIPO • ERKEN KIRILIM RADAR</b>")
@@ -416,7 +427,7 @@ def build_track_message(state):
     band_used = watch.get("band_used", "")
 
     lines = []
-    lines.append("✅ <b>Saatlik Takip</b> – PREMIUM v3 (Aynı 3 Hisse)")
+    lines.append("✅ <b>Saatlik Takip</b> – PREMIUM v3.1 (Aynı 3 Hisse)")
     lines.append("")
     lines.append("┌──────────────────────────────")
     lines.append("│ 🕒 <b>TAIPO • TAKİP ÇİZELGESİ</b>")
@@ -437,7 +448,7 @@ def build_track_message(state):
     for sym in symbols:
         q = fetch_quote(sym)
         if not q:
-            lines.append(f"<code>{clean_sym(sym)}</code> → veri yok")
+            lines.append(f"<code>{clean_sym(sym)}</code>  → veri yok")
             continue
 
         base = baseline.get(sym)
@@ -492,7 +503,6 @@ def run_auto(state):
         send_message(f"⚠️ bist100.txt bulunamadı veya boş.\n🕒 {now_str_tr()}")
         return state
 
-    # 10:00–10:10 seçim
     state, picks, band = try_pick_once(state, symbols)
     if picks:
         text = build_pick_message(picks, state["watch"]["picked_at"], band)
@@ -500,7 +510,6 @@ def run_auto(state):
         send_message(text)
         return state
 
-    # Saatlik takip
     if is_track_time_now():
         if state.get("watch", {}).get("symbols"):
             if should_send_track_now(state):
@@ -528,30 +537,39 @@ def run_command_listener(state):
         if not text:
             continue
 
-        # sadece hedef gruptan dinle
-        if TARGET_CHAT_ID and not is_target_chat(msg):
-            continue
-
-        # eski komutları yok say (ama tolerans 10 dk)
+        # ✅ Eski komutları yok say (spam engeli)
         if not is_fresh_command(msg):
             continue
 
         low = text.lower()
+        cid = msg_chat_id(msg)
 
+        # ✅ /ping: canlılık testi (her yerde çalışsın)
+        if low.startswith("/ping"):
+            send_message(f"✅ PONG\n🕒 {now_str_tr()}\n🆔 Chat: <code>{cid}</code>", chat_id=cid)
+            continue
+
+        # ✅ /id: her yerde çalışsın (CHAT_ID bulma kurtarıcı)
         if low.startswith("/id"):
             now_ts = int(time.time())
             last_ts = int(state.get("last_id_reply_ts", 0))
             if now_ts - last_ts >= ID_COOLDOWN_SEC:
-                cid = msg_chat_id(msg)
                 title = msg_chat_title(msg)
                 reply = f"🆔 <b>Chat ID:</b> <code>{cid}</code>"
                 if title:
                     reply += f"\n👥 <b>Grup:</b> {_escape_html(title)}"
+                if TARGET_CHAT_ID:
+                    reply += f"\n🎯 <b>Bot hedef CHAT_ID:</b> <code>{_escape_html(TARGET_CHAT_ID)}</code>"
                 send_message(reply, chat_id=cid)
                 state["last_id_reply_ts"] = now_ts
             continue
 
+        # ✅ /taipo sadece hedef grupta çalışsın (güvenlik)
         if low.startswith("/taipo"):
+            if TARGET_CHAT_ID and not is_target_chat(msg):
+                # hedef değilse sessiz kal (isteğe bağlı uyarı da atabiliriz)
+                continue
+
             now_ts = int(time.time())
             last_ts = int(state.get("last_command_reply_ts", 0))
             if now_ts - last_ts < REPLY_COOLDOWN_SEC:
@@ -560,17 +578,16 @@ def run_command_listener(state):
             if state.get("watch", {}).get("symbols"):
                 reply = build_track_message(state)
                 state, reply = append_news_to_text(state, reply)
-                send_message(reply, chat_id=msg_chat_id(msg))
+                send_message(reply, chat_id=cid)
             else:
                 base = (
-                    f"📡 <b>TAIPO • ERKEN KIRILIM RADAR</b>\n"
-                    f"🕒 {now_str_tr()}\n\n"
+                    f"📡 <b>TAIPO • ERKEN KIRILIM RADAR</b>\n🕒 {now_str_tr()}\n\n"
                     f"⚠️ Bugün liste henüz oluşmadı.\n"
                     f"⏰ Seçim aralığı: 10:00–10:10 (hafta içi)\n"
                     f"🎯 Band (auto): {EARLY_MIN_PCT:.2f}% – {EARLY_MAX_PCT:.2f}%\n"
                 )
                 state, base = append_news_to_text(state, base)
-                send_message(base, chat_id=msg_chat_id(msg))
+                send_message(base, chat_id=cid)
 
             state["last_command_reply_ts"] = now_ts
 
@@ -582,7 +599,6 @@ def main():
     state = load_json(STATE_FILE, {})
     state = ensure_today_state(state)
 
-    # Önce komutları yakala (AUTO'da da)
     state = run_command_listener(state)
 
     if MODE == "COMMAND":
