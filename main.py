@@ -48,9 +48,11 @@ TRACK_MINUTE_TR = 10
 REPLY_COOLDOWN_SEC = 20
 ID_COOLDOWN_SEC = 60
 
-# ✅ En kritik anti-spam: eski komutlara cevap verme (saniye)
-# GitHub Actions state sıfırlasa bile eski /taipo /id spam yapamaz.
-COMMAND_MAX_AGE_SEC = 180  # 3 dakika
+# ✅ IMPORTANT:
+# GitHub Actions cron gecikmesi olacağı için (1-5 dk),
+# komutların "bayat" sayılmaması lazım.
+# 600 saniye = 10 dk tolerans.
+COMMAND_MAX_AGE_SEC = 600
 
 # =========================
 # NEWS (RSS) - PRO MODE
@@ -121,11 +123,11 @@ def send_message(text: str, chat_id: str = None):
     payload = {
         "chat_id": chat_id,
         "text": text,
-        "parse_mode": "HTML",                 # ✅ PRO link format
-        "disable_web_page_preview": True      # ✅ temiz görünüm
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True
     }
     try:
-        r = requests.post(f"{TELEGRAM_API}/sendMessage", json=payload, timeout=20)
+        r = requests.post(f"{TELEGRAM_API}/sendMessage", json=payload, timeout=25)
         return r.status_code == 200
     except Exception:
         return False
@@ -135,7 +137,7 @@ def get_updates(offset: int):
         return []
     params = {"timeout": 0, "offset": offset}
     try:
-        r = requests.get(f"{TELEGRAM_API}/getUpdates", params=params, timeout=20)
+        r = requests.get(f"{TELEGRAM_API}/getUpdates", params=params, timeout=25)
         data = r.json()
         return data.get("result", []) if data.get("ok") else []
     except Exception:
@@ -163,7 +165,7 @@ def is_fresh_command(msg: dict) -> bool:
     # Telegram 'date' unix time (saniye)
     d = msg.get("date")
     if not isinstance(d, int):
-        return True  # date yoksa bloklama yapma
+        return True
     return (int(time.time()) - d) <= COMMAND_MAX_AGE_SEC
 
 # =========================
@@ -190,7 +192,6 @@ def ensure_today_state(state):
         state["watch"] = {"symbols": [], "baseline": {}, "picked_at": "", "band_used": ""}
         state["sent_pick_message"] = False
         state["last_track_sent_key"] = ""
-
     return state
 
 def in_pick_window():
@@ -332,6 +333,7 @@ def pick_new_news_for_message(state, items, max_items=NEWS_MAX_ITEMS):
     now_ts = int(time.time())
     seen_map = state.get(NEWS_STATE_KEY, {}) or {}
 
+    # 7 gün dışını sil
     cutoff = now_ts - 7 * 24 * 3600
     seen_map = {k: v for k, v in seen_map.items() if int(v) >= cutoff}
 
@@ -359,7 +361,7 @@ def build_news_block(selected_items):
     for it in selected_items:
         title = _escape_html(it["title"])
         link = it["link"]
-        lines.append(f"• 🔥 {title}  —  <a href=\"{link}\">Haberi aç</a>")
+        lines.append(f"• 🔥 {title} — <a href=\"{link}\">Haberi aç</a>")
     return "\n".join(lines)
 
 def append_news_to_text(state, base_text: str):
@@ -435,7 +437,7 @@ def build_track_message(state):
     for sym in symbols:
         q = fetch_quote(sym)
         if not q:
-            lines.append(f"<code>{clean_sym(sym)}</code>  → veri yok")
+            lines.append(f"<code>{clean_sym(sym)}</code> → veri yok")
             continue
 
         base = baseline.get(sym)
@@ -490,6 +492,7 @@ def run_auto(state):
         send_message(f"⚠️ bist100.txt bulunamadı veya boş.\n🕒 {now_str_tr()}")
         return state
 
+    # 10:00–10:10 seçim
     state, picks, band = try_pick_once(state, symbols)
     if picks:
         text = build_pick_message(picks, state["watch"]["picked_at"], band)
@@ -497,6 +500,7 @@ def run_auto(state):
         send_message(text)
         return state
 
+    # Saatlik takip
     if is_track_time_now():
         if state.get("watch", {}).get("symbols"):
             if should_send_track_now(state):
@@ -524,10 +528,11 @@ def run_command_listener(state):
         if not text:
             continue
 
+        # sadece hedef gruptan dinle
         if TARGET_CHAT_ID and not is_target_chat(msg):
             continue
 
-        # ✅ En kritik: eski komutları tamamen yok say (spam biter)
+        # eski komutları yok say (ama tolerans 10 dk)
         if not is_fresh_command(msg):
             continue
 
@@ -558,7 +563,8 @@ def run_command_listener(state):
                 send_message(reply, chat_id=msg_chat_id(msg))
             else:
                 base = (
-                    f"📡 <b>TAIPO • ERKEN KIRILIM RADAR</b>\n🕒 {now_str_tr()}\n\n"
+                    f"📡 <b>TAIPO • ERKEN KIRILIM RADAR</b>\n"
+                    f"🕒 {now_str_tr()}\n\n"
                     f"⚠️ Bugün liste henüz oluşmadı.\n"
                     f"⏰ Seçim aralığı: 10:00–10:10 (hafta içi)\n"
                     f"🎯 Band (auto): {EARLY_MIN_PCT:.2f}% – {EARLY_MAX_PCT:.2f}%\n"
@@ -576,7 +582,7 @@ def main():
     state = load_json(STATE_FILE, {})
     state = ensure_today_state(state)
 
-    # Komutları yakala (AUTO'da da çalışır ama "fresh" filtresi spamı bitirir)
+    # Önce komutları yakala (AUTO'da da)
     state = run_command_listener(state)
 
     if MODE == "COMMAND":
