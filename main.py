@@ -1,22 +1,23 @@
 import os
 import json
 import time
+import subprocess
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from urllib.parse import quote, urlsplit, urlunsplit, parse_qsl
+from urllib.parse import quote, urlsplit, urlunsplit, parse_qsl, urlencode
 
 import requests
 import yfinance as yf
 import feedparser
 
 # =========================================================
-# TAIPO-BIST v3 PRO
+# TAIPO-BIST v3 PRO (Plan A Ready)
 # - Pick: 10:00–10:10 (TR)
 # - Track: 11:30..17:30 (TR) hourly
-# - Band target: +0.40% to +0.90% (auto widen up to +1.20% etc.)
-# - Anti-spam: /id only when requested, no random chat-id messages
+# - Band target: +0.40% to +0.90% (auto widen)
+# - Anti-spam: /id only when requested, cooldown, ignore old commands
 # - News: only new items (7d memory) and only if exists
-# - Simple volume filter/rank
+# - Optional: Persist state.json to repo (Plan A) via git commit/push
 # =========================================================
 
 # =========================
@@ -34,6 +35,15 @@ SYMBOLS_FILE = "bist100.txt"
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 # =========================
+# PLAN A (state.json persistence)
+# =========================
+# If PERSIST_STATE=1, bot will try to git commit & push state.json when it changes.
+# Requires GitHub Actions workflow:
+# - actions/checkout with a token
+# - permissions: contents: write
+PERSIST_STATE = os.getenv("PERSIST_STATE", "0").strip() == "1"
+
+# =========================
 # PICK SETTINGS
 # =========================
 PICK_START_HOUR = 10
@@ -42,7 +52,6 @@ PICK_END_MIN = 10
 
 PICK_COUNT = 3
 
-# User wanted base band: 0.40–0.90, auto widen if not found
 AUTO_BAND_STEPS = [
     (0.40, 0.90),
     (0.40, 1.00),
@@ -56,7 +65,6 @@ AUTO_BAND_STEPS = [
 # =========================
 # TRACK SETTINGS
 # =========================
-# Track at: 11:30, 12:30, 13:30, 14:30, 15:30, 16:30, 17:30
 TRACK_HOURS_TR = {11, 12, 13, 14, 15, 16, 17}
 TRACK_MINUTE_TR = 30
 
@@ -66,16 +74,13 @@ TRACK_MINUTE_TR = 30
 REPLY_COOLDOWN_SEC = 10
 ID_COOLDOWN_SEC = 30
 
-# If workflow runs later, ignore ancient commands so old /taipo doesn't re-trigger.
-# You can set in GitHub Actions env:
-# COMMAND_MAX_AGE_SEC: "600"   (10 minutes)
-COMMAND_MAX_AGE_SEC = int(os.getenv("COMMAND_MAX_AGE_SEC", "600"))
+COMMAND_MAX_AGE_SEC = int(os.getenv("COMMAND_MAX_AGE_SEC", "600"))  # 10 min default
 
 # =========================
-# NEWS (RSS)
+# NEWS
 # =========================
 NEWS_MAX_ITEMS = 3
-NEWS_STATE_KEY = "news_seen"  # state.json keeps title->ts (7 days)
+NEWS_STATE_KEY = "news_seen"  # title->ts
 
 # =========================
 # IO HELPERS
@@ -123,6 +128,7 @@ def load_symbols():
             if not s.endswith(".IS"):
                 s = s + ".IS"
             syms.append(s)
+    # dedupe preserve order
     return list(dict.fromkeys(syms))
 
 # =========================
@@ -211,7 +217,6 @@ def ensure_today_state(state):
     return state
 
 def in_pick_window():
-    # You asked weekday originally; keep it. For 7/24 testing, set this to always True.
     if not is_weekday_tr():
         return False
     n = datetime.now(TZ)
@@ -234,7 +239,7 @@ def should_send_track_now(state):
 # =========================
 def fetch_quote(symbol: str):
     """
-    Returns:
+    Returns dict:
       symbol, price, prev_close, change_pct, volume(optional), avg_volume(optional), vol_ratio(optional)
     """
     try:
@@ -247,13 +252,11 @@ def fetch_quote(symbol: str):
         avg_vol = None
 
         if fi:
-            price = fi.get("last_price") or fi.get("lastPrice") or fi.get("last_price")
-            prev_close = fi.get("previous_close") or fi.get("previousClose") or fi.get("previous_close")
-            # yfinance fast_info fields can vary
+            price = fi.get("last_price") or fi.get("lastPrice")
+            prev_close = fi.get("previous_close") or fi.get("previousClose")
             vol = fi.get("last_volume") or fi.get("lastVolume") or fi.get("volume")
             avg_vol = fi.get("ten_day_average_volume") or fi.get("tenDayAverageVolume") or fi.get("average_volume")
 
-        # fallback for price/prev_close
         if price is None or prev_close is None:
             hist2 = t.history(period="2d", interval="1d")
             if hist2 is not None and len(hist2) >= 2:
@@ -265,14 +268,12 @@ def fetch_quote(symbol: str):
 
         change_pct = ((float(price) - float(prev_close)) / float(prev_close)) * 100.0
 
-        # try volume ratio from daily history (more stable)
         vol_ratio = None
         try:
             hist = t.history(period="30d", interval="1d")
-            if hist is not None and len(hist) >= 10:
-                # today's volume might not be final; still usable as "flow"
-                last_vol = float(hist["Volume"].iloc[-1]) if "Volume" in hist.columns else None
-                avg20 = float(hist["Volume"].tail(20).mean()) if "Volume" in hist.columns else None
+            if hist is not None and len(hist) >= 10 and "Volume" in hist.columns:
+                last_vol = float(hist["Volume"].iloc[-1])
+                avg20 = float(hist["Volume"].tail(20).mean())
                 if last_vol and avg20 and avg20 > 0:
                     vol = last_vol
                     avg_vol = avg20
@@ -306,21 +307,11 @@ def scan_quotes(symbols):
     return out
 
 def _rank_score(q: dict) -> float:
-    """
-    Score prioritizes:
-      1) volume ratio (if exists)
-      2) change_pct
-    """
     vr = float(q.get("vol_ratio", 0.0) or 0.0)
     cp = float(q.get("change_pct", 0.0) or 0.0)
-    return vr * 10.0 + cp  # volume is heavier
+    return vr * 10.0 + cp
 
 def pick_breakouts_with_auto_band(quotes, n=3):
-    """
-    Pick top N from band, ranked by volume ratio + change.
-    Also applies a light sanity filter:
-      - positive change
-    """
     quotes_pos = [q for q in quotes if float(q.get("change_pct", 0)) > 0]
 
     for lo, hi in AUTO_BAND_STEPS:
@@ -331,7 +322,6 @@ def pick_breakouts_with_auto_band(quotes, n=3):
         if len(pool_sorted) >= n:
             return pool_sorted[:n], (lo, hi)
 
-    # fallback: best positive movers up to +3%
     fallback = [q for q in quotes_pos if 0.0 <= float(q["change_pct"]) <= 3.0]
     fallback = sorted(fallback, key=_rank_score, reverse=True)[:n]
     if len(fallback) == n:
@@ -352,13 +342,12 @@ def normalize_url(u: str) -> str:
         q = parse_qsl(parts.query, keep_blank_values=True)
         banned = {"utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "oc"}
         q2 = [(k, v) for (k, v) in q if k not in banned]
-        new_query = "&".join([f"{k}={quote(v)}" if v else f"{k}=" for k, v in q2])
+        new_query = urlencode(q2, doseq=True)
         return urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, parts.fragment))
     except Exception:
         return u
 
 def fetch_bist_news_items():
-    # keep it lightweight to avoid rate/timeout
     queries = [
         '"Borsa İstanbul" OR BIST OR "BIST 100"',
         'KAP OR "Kamuyu Aydınlatma Platformu"',
@@ -379,7 +368,6 @@ def fetch_bist_news_items():
                     "link": normalize_url(link),
                 })
 
-    # dedupe by title
     uniq = []
     seen_titles = set()
     for it in items:
@@ -394,7 +382,6 @@ def pick_new_news_for_message(state, items, max_items=NEWS_MAX_ITEMS):
     now_ts = int(time.time())
     seen_map = state.get(NEWS_STATE_KEY, {}) or {}
 
-    # keep only last 7 days
     cutoff = now_ts - 7 * 24 * 3600
     seen_map = {k: v for k, v in seen_map.items() if int(v) >= cutoff}
 
@@ -470,7 +457,7 @@ def build_pick_message(picks, picked_at, band_used):
         )
     lines.append("")
     lines.append("🕒 Takip: 11:30 • 12:30 • 13:30 • 14:30 • 15:30 • 16:30 • 17:30")
-    lines.append("⌨️ Komut: <code>/taipo</code>  | Test: <code>/ping</code>")
+    lines.append("⌨️ Komut: <code>/taipo</code>  | Test: <code>/ping</code>  | ID: <code>/id</code>")
     return "\n".join(lines)
 
 def build_track_message(state):
@@ -593,7 +580,7 @@ def run_command_listener(state):
         if not text:
             continue
 
-        # only target chat
+        # only target chat (if set)
         if TARGET_CHAT_ID and not is_target_chat(msg):
             continue
 
@@ -613,7 +600,7 @@ def run_command_listener(state):
             send_message(reply, chat_id=cid)
             continue
 
-        # /id (only when requested)
+        # /id
         if low.startswith("/id"):
             now_ts = int(time.time())
             last_ts = int(state.get("last_id_reply_ts", 0))
@@ -655,6 +642,36 @@ def run_command_listener(state):
     state["last_update_id"] = max_uid
     return state
 
+# =========================
+# PLAN A: Git persist state.json
+# =========================
+def _git_has_changes(path: str) -> bool:
+    try:
+        r = subprocess.run(["git", "status", "--porcelain", path], capture_output=True, text=True, check=False)
+        return bool(r.stdout.strip())
+    except Exception:
+        return False
+
+def persist_state_if_enabled():
+    if not PERSIST_STATE:
+        return
+    # only attempt inside a git repo
+    if not os.path.exists(".git"):
+        return
+    if not _git_has_changes(STATE_FILE):
+        return
+
+    try:
+        subprocess.run(["git", "config", "user.email", "actions@github.com"], check=False)
+        subprocess.run(["git", "config", "user.name", "github-actions"], check=False)
+
+        subprocess.run(["git", "add", STATE_FILE], check=False)
+        subprocess.run(["git", "commit", "-m", "chore: update state"], check=False)
+        subprocess.run(["git", "push"], check=False)
+    except Exception:
+        # never crash bot due to git
+        pass
+
 def main():
     ensure_files()
     state = load_json(STATE_FILE, {})
@@ -665,10 +682,12 @@ def main():
 
     if MODE == "COMMAND":
         save_json(STATE_FILE, state)
+        persist_state_if_enabled()
         return
 
     state = run_auto(state)
     save_json(STATE_FILE, state)
+    persist_state_if_enabled()
 
 if __name__ == "__main__":
     main()
