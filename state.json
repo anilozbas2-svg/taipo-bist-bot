@@ -1,24 +1,15 @@
 {
   "last_update_id": 0,
   "last_command_reply_ts": 0,
-
+  "last_id_reply_ts": 0,
   "day": "",
-
   "watch": {
     "symbols": [],
     "baseline": {},
-    "picked_at": ""
+    "picked_at": "",
+    "band_used": ""
   },
-
   "sent_pick_message": false,
   "last_track_sent_key": "",
-
-  "news": {
-    "seen_ids": [],
-    "last_sent": {
-      "yesterday": "",
-      "midday": "",
-      "close": ""
-    }
-  }
+  "news_seen": {}
 }
