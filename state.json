@@ -1,6 +1,6 @@
 {
-  "last_update_id": 229680587,
-  "last_command_reply_ts": 0,
+  "last_update_id": 229680589,
+  "last_command_reply_ts": 1766357905,
   "last_id_reply_ts": 0,
   "day": "2025-12-22",
   "watch": {
@@ -11,5 +11,9 @@
   },
   "sent_pick_message": false,
   "last_track_sent_key": "",
-  "news_seen": {}
+  "news_seen": {
+    "borsa i̇stanbul meslekî ve teknik anadolu lisesi i̇kinci dönemde eğitim öğretime başlıyor - kütahya i̇l milli eğitim müdürlüğü": 1766357908,
+    "borsa endekslerinde 2026 ilk çeyrek değişiklikleri açıklandı | son dakika ekonomi haberleri - bloomberght": 1766357908,
+    "borsa i̇stanbul’da bu hafta 12 hissede tedbirler sona eriyor haberi - borsanın gündemi": 1766357908
+  }
 }
