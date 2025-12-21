@@ -1,4 +1,15 @@
-yfinance==0.2.54
-requests==2.32.3
-feedparser==6.0.11
-tzdata==2025.1
+{
+  "last_update_id": 0,
+  "last_command_reply_ts": 0,
+  "last_id_reply_ts": 0,
+  "day": "",
+  "watch": {
+    "symbols": [],
+    "baseline": {},
+    "picked_at": "",
+    "band_used": ""
+  },
+  "sent_pick_message": false,
+  "last_track_sent_key": "",
+  "news_seen": {}
+}
