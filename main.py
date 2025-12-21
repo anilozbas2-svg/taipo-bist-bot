@@ -9,6 +9,16 @@ import requests
 import yfinance as yf
 import feedparser
 
+# =========================================================
+# TAIPO-BIST v3 PRO
+# - Pick: 10:00–10:10 (TR)
+# - Track: 11:30..17:30 (TR) hourly
+# - Band target: +0.40% to +0.90% (auto widen up to +1.20% etc.)
+# - Anti-spam: /id only when requested, no random chat-id messages
+# - News: only new items (7d memory) and only if exists
+# - Simple volume filter/rank
+# =========================================================
+
 # =========================
 # CONFIG
 # =========================
@@ -24,38 +34,48 @@ SYMBOLS_FILE = "bist100.txt"
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 # =========================
-# EARLY BREAKOUT SETTINGS
+# PICK SETTINGS
 # =========================
 PICK_START_HOUR = 10
 PICK_START_MIN = 0
 PICK_END_MIN = 10
 
-EARLY_MIN_PCT = 0.15
-EARLY_MAX_PCT = 0.80
 PICK_COUNT = 3
 
+# User wanted base band: 0.40–0.90, auto widen if not found
 AUTO_BAND_STEPS = [
-    (0.15, 0.80),
-    (0.10, 1.00),
-    (0.05, 1.25),
-    (0.00, 1.50),
-    (0.00, 2.00),
+    (0.40, 0.90),
+    (0.40, 1.00),
+    (0.40, 1.20),
+    (0.30, 1.20),
+    (0.20, 1.50),
+    (0.10, 2.00),
+    (0.00, 3.00),
 ]
 
+# =========================
+# TRACK SETTINGS
+# =========================
+# Track at: 11:30, 12:30, 13:30, 14:30, 15:30, 16:30, 17:30
 TRACK_HOURS_TR = {11, 12, 13, 14, 15, 16, 17}
-TRACK_MINUTE_TR = 10
-
-REPLY_COOLDOWN_SEC = 20
-ID_COOLDOWN_SEC = 60
-
-# ✅ anti-spam: eski komutlara cevap verme
-COMMAND_MAX_AGE_SEC = int(os.getenv("COMMAND_MAX_AGE_SEC", "600"))  # default 10 dk
+TRACK_MINUTE_TR = 30
 
 # =========================
-# NEWS (RSS) - PRO MODE
+# COMMAND / ANTI-SPAM
+# =========================
+REPLY_COOLDOWN_SEC = 10
+ID_COOLDOWN_SEC = 30
+
+# If workflow runs later, ignore ancient commands so old /taipo doesn't re-trigger.
+# You can set in GitHub Actions env:
+# COMMAND_MAX_AGE_SEC: "600"   (10 minutes)
+COMMAND_MAX_AGE_SEC = int(os.getenv("COMMAND_MAX_AGE_SEC", "600"))
+
+# =========================
+# NEWS (RSS)
 # =========================
 NEWS_MAX_ITEMS = 3
-NEWS_STATE_KEY = "news_seen"
+NEWS_STATE_KEY = "news_seen"  # state.json keeps title->ts (7 days)
 
 # =========================
 # IO HELPERS
@@ -111,7 +131,7 @@ def load_symbols():
 def _escape_html(s: str) -> str:
     return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
-def send_message(text: str, chat_id: str = None):
+def send_message(text: str, chat_id: str = None) -> bool:
     if not chat_id:
         chat_id = TARGET_CHAT_ID
     if not BOT_TOKEN or not chat_id:
@@ -188,10 +208,10 @@ def ensure_today_state(state):
         state["watch"] = {"symbols": [], "baseline": {}, "picked_at": "", "band_used": ""}
         state["sent_pick_message"] = False
         state["last_track_sent_key"] = ""
-
     return state
 
 def in_pick_window():
+    # You asked weekday originally; keep it. For 7/24 testing, set this to always True.
     if not is_weekday_tr():
         return False
     n = datetime.now(TZ)
@@ -213,40 +233,67 @@ def should_send_track_now(state):
 # DATA
 # =========================
 def fetch_quote(symbol: str):
+    """
+    Returns:
+      symbol, price, prev_close, change_pct, volume(optional), avg_volume(optional), vol_ratio(optional)
+    """
     try:
         t = yf.Ticker(symbol)
 
         fi = getattr(t, "fast_info", None)
         price = None
         prev_close = None
+        vol = None
+        avg_vol = None
 
         if fi:
             price = fi.get("last_price") or fi.get("lastPrice") or fi.get("last_price")
             prev_close = fi.get("previous_close") or fi.get("previousClose") or fi.get("previous_close")
+            # yfinance fast_info fields can vary
+            vol = fi.get("last_volume") or fi.get("lastVolume") or fi.get("volume")
+            avg_vol = fi.get("ten_day_average_volume") or fi.get("tenDayAverageVolume") or fi.get("average_volume")
 
+        # fallback for price/prev_close
         if price is None or prev_close is None:
             hist2 = t.history(period="2d", interval="1d")
             if hist2 is not None and len(hist2) >= 2:
                 prev_close = float(hist2["Close"].iloc[-2])
                 price = float(hist2["Close"].iloc[-1])
-            else:
-                hist1 = t.history(period="1d", interval="1m")
-                if hist1 is not None and len(hist1) >= 1:
-                    price = float(hist1["Close"].iloc[-1])
-                hist_close = t.history(period="2d", interval="1d")
-                if hist_close is not None and len(hist_close) >= 2:
-                    prev_close = float(hist_close["Close"].iloc[-2])
 
         if price is None or prev_close in (None, 0):
             return None
 
         change_pct = ((float(price) - float(prev_close)) / float(prev_close)) * 100.0
-        return {
+
+        # try volume ratio from daily history (more stable)
+        vol_ratio = None
+        try:
+            hist = t.history(period="30d", interval="1d")
+            if hist is not None and len(hist) >= 10:
+                # today's volume might not be final; still usable as "flow"
+                last_vol = float(hist["Volume"].iloc[-1]) if "Volume" in hist.columns else None
+                avg20 = float(hist["Volume"].tail(20).mean()) if "Volume" in hist.columns else None
+                if last_vol and avg20 and avg20 > 0:
+                    vol = last_vol
+                    avg_vol = avg20
+                    vol_ratio = last_vol / avg20
+        except Exception:
+            pass
+
+        out = {
             "symbol": symbol,
             "price": round(float(price), 2),
             "prev_close": round(float(prev_close), 2),
             "change_pct": round(float(change_pct), 2),
         }
+        if vol is not None:
+            out["volume"] = float(vol)
+        if avg_vol is not None:
+            out["avg_volume"] = float(avg_vol)
+        if vol_ratio is not None:
+            out["vol_ratio"] = round(float(vol_ratio), 2)
+
+        return out
     except Exception:
         return None
 
@@ -258,17 +305,37 @@ def scan_quotes(symbols):
             out.append(q)
     return out
 
+def _rank_score(q: dict) -> float:
+    """
+    Score prioritizes:
+      1) volume ratio (if exists)
+      2) change_pct
+    """
+    vr = float(q.get("vol_ratio", 0.0) or 0.0)
+    cp = float(q.get("change_pct", 0.0) or 0.0)
+    return vr * 10.0 + cp  # volume is heavier
+
 def pick_breakouts_with_auto_band(quotes, n=3):
+    """
+    Pick top N from band, ranked by volume ratio + change.
+    Also applies a light sanity filter:
+      - positive change
+    """
+    quotes_pos = [q for q in quotes if float(q.get("change_pct", 0)) > 0]
+
     for lo, hi in AUTO_BAND_STEPS:
-        pool = [q for q in quotes if lo <= float(q["change_pct"]) <= hi]
-        pool_sorted = sorted(pool, key=lambda x: x["change_pct"], reverse=True)
+        pool = [q for q in quotes_pos if lo <= float(q["change_pct"]) <= hi]
+        if not pool:
+            continue
+        pool_sorted = sorted(pool, key=_rank_score, reverse=True)
         if len(pool_sorted) >= n:
             return pool_sorted[:n], (lo, hi)
 
-    fallback = [q for q in quotes if 0.0 <= float(q["change_pct"]) <= 2.0]
-    fallback = sorted(fallback, key=lambda x: x["change_pct"], reverse=True)[:n]
+    # fallback: best positive movers up to +3%
+    fallback = [q for q in quotes_pos if 0.0 <= float(q["change_pct"]) <= 3.0]
+    fallback = sorted(fallback, key=_rank_score, reverse=True)[:n]
     if len(fallback) == n:
-        return fallback, (0.0, 2.0)
+        return fallback, (0.0, 3.0)
 
     return [], None
 
@@ -291,13 +358,12 @@ def normalize_url(u: str) -> str:
         return u
 
 def fetch_bist_news_items():
+    # keep it lightweight to avoid rate/timeout
     queries = [
-        'BIST OR "Borsa İstanbul" OR "Borsa Istanbul"',
-        '"BIST 100" OR BIST100',
+        '"Borsa İstanbul" OR BIST OR "BIST 100"',
         'KAP OR "Kamuyu Aydınlatma Platformu"',
         'SPK OR "Sermaye Piyasası Kurulu"',
         'temettü OR bedelsiz OR "pay geri alım" OR "sermaye artırımı"',
-        'ihale OR sözleşme OR anlaşma OR yatırım'
     ]
 
     items = []
@@ -307,14 +373,13 @@ def fetch_bist_news_items():
         for e in feed.entries[:10]:
             title = (e.get("title") or "").strip()
             link = (e.get("link") or "").strip()
-            published = (e.get("published") or "").strip()
             if title and link:
                 items.append({
                     "title": title,
                     "link": normalize_url(link),
-                    "published": published
                 })
 
+    # dedupe by title
     uniq = []
     seen_titles = set()
     for it in items:
@@ -323,13 +388,13 @@ def fetch_bist_news_items():
             continue
         seen_titles.add(key)
         uniq.append(it)
-
     return uniq
 
 def pick_new_news_for_message(state, items, max_items=NEWS_MAX_ITEMS):
     now_ts = int(time.time())
     seen_map = state.get(NEWS_STATE_KEY, {}) or {}
 
+    # keep only last 7 days
     cutoff = now_ts - 7 * 24 * 3600
     seen_map = {k: v for k, v in seen_map.items() if int(v) >= cutoff}
 
@@ -353,11 +418,11 @@ def build_news_block(selected_items):
         return ""
 
     lines = []
-    lines.append("📰 <b>Haber Radar</b> (max 3 • 🔥 seçilir)")
+    lines.append("📰 <b>Haber Radar</b> (max 3 • yeni)")
     for it in selected_items:
         title = _escape_html(it["title"])
         link = it["link"]
-        lines.append(f"• 🔥 {title}  —  <a href=\"{link}\">Haberi aç</a>")
+        lines.append(f"• 🔥 {title} — <a href=\"{link}\">Haberi aç</a>")
     return "\n".join(lines)
 
 def append_news_to_text(state, base_text: str):
@@ -386,22 +451,26 @@ def pct_str(pct: float):
 def build_pick_message(picks, picked_at, band_used):
     lo, hi = band_used
     lines = []
-    lines.append("✅ <b>10:00–10:10 Erken Kırılım</b> – PREMIUM v3")
+    lines.append("✅ <b>10:00–10:10 Erken Kırılım</b> – TAIPO BIST v3 PRO")
     lines.append("")
     lines.append("┌──────────────────────────────")
-    lines.append("│ 📊 <b>TAIPO • ERKEN KIRILIM RADAR</b>")
+    lines.append("│ 📊 <b>ERKEN KIRILIM RADAR</b>")
     lines.append(f"│ {picked_at}")
     lines.append("└──────────────────────────────")
     lines.append("")
     lines.append(f"🎯 <b>Band (auto):</b> {lo:.2f}% – {hi:.2f}%")
     lines.append("")
-    lines.append("🟢 <b>3 ERKEN KIRILIM</b> (Bugün sabit takip)")
+    lines.append("🟢 <b>Seçilen 3 Hisse</b> (takip listesi)")
     for q in picks:
         sym = clean_sym(q["symbol"])
-        lines.append(f"<code>{sym}</code>  {q['price']:.2f}   {trend_emoji(q['change_pct'])}  {pct_str(q['change_pct'])}")
+        vr = q.get("vol_ratio")
+        vr_txt = f" • hacim x{vr:.2f}" if isinstance(vr, (int, float)) else ""
+        lines.append(
+            f"<code>{sym}</code>  {q['price']:.2f}   {trend_emoji(q['change_pct'])}  {pct_str(q['change_pct'])}{vr_txt}"
+        )
     lines.append("")
-    lines.append("🕒 Takip: 11:10 • 12:10 • 13:10 • 14:10 • 15:10 • 16:10 • 17:10")
-    lines.append("⌨️ Komut: <code>/taipo</code>")
+    lines.append("🕒 Takip: 11:30 • 12:30 • 13:30 • 14:30 • 15:30 • 16:30 • 17:30")
+    lines.append("⌨️ Komut: <code>/taipo</code>  | Test: <code>/ping</code>")
     return "\n".join(lines)
 
 def build_track_message(state):
@@ -412,10 +481,10 @@ def build_track_message(state):
     band_used = watch.get("band_used", "")
 
     lines = []
-    lines.append("✅ <b>Saatlik Takip</b> – PREMIUM v3 (Aynı 3 Hisse)")
+    lines.append("✅ <b>Saatlik Takip</b> – TAIPO BIST v3 PRO (aynı 3 hisse)")
     lines.append("")
     lines.append("┌──────────────────────────────")
-    lines.append("│ 🕒 <b>TAIPO • TAKİP ÇİZELGESİ</b>")
+    lines.append("│ 🕒 <b>TAKİP ÇİZELGESİ</b>")
     lines.append(f"│ {now_str_tr()}")
     lines.append("└──────────────────────────────")
     lines.append("")
@@ -433,7 +502,7 @@ def build_track_message(state):
     for sym in symbols:
         q = fetch_quote(sym)
         if not q:
-            lines.append(f"<code>{clean_sym(sym)}</code>  → veri yok")
+            lines.append(f"<code>{clean_sym(sym)}</code> → veri yok")
             continue
 
         base = baseline.get(sym)
@@ -485,9 +554,10 @@ def try_pick_once(state, symbols):
 def run_auto(state):
     symbols = load_symbols()
     if not symbols:
-        send_message(f"⚠️ bist100.txt bulunamadı veya boş.\n🕒 {now_str_tr()}")
+        send_message(f"⚠️ <b>bist100.txt</b> bulunamadı veya boş.\n🕒 {now_str_tr()}")
         return state
 
+    # 1) 10:00–10:10 pick once
     state, picks, band = try_pick_once(state, symbols)
     if picks:
         text = build_pick_message(picks, state["watch"]["picked_at"], band)
@@ -495,6 +565,7 @@ def run_auto(state):
         send_message(text)
         return state
 
+    # 2) Track at 11:30..17:30
     if is_track_time_now():
         if state.get("watch", {}).get("symbols"):
             if should_send_track_now(state):
@@ -522,31 +593,27 @@ def run_command_listener(state):
         if not text:
             continue
 
-        # sadece hedef grubu dinle
+        # only target chat
         if TARGET_CHAT_ID and not is_target_chat(msg):
             continue
 
-        # eski komutları yok say
+        # ignore ancient commands
         if not is_fresh_command(msg):
             continue
 
         low = text.lower()
 
-        # ✅ /ping (test)
+        # /ping
         if low.startswith("/ping"):
             cid = msg_chat_id(msg)
             title = msg_chat_title(msg)
-            reply = (
-                "🏓 <b>PONG</b>\n"
-                f"🕒 {now_str_tr()}\n"
-                f"🆔 <b>Chat ID:</b> <code>{cid}</code>\n"
-                f"🎯 <b>ENV CHAT_ID:</b> <code>{_escape_html(TARGET_CHAT_ID)}</code>"
-            )
+            reply = f"🏓 <b>PONG</b>\n🕒 {now_str_tr()}"
             if title:
                 reply += f"\n👥 <b>Grup:</b> {_escape_html(title)}"
             send_message(reply, chat_id=cid)
             continue
 
+        # /id (only when requested)
         if low.startswith("/id"):
             now_ts = int(time.time())
             last_ts = int(state.get("last_id_reply_ts", 0))
@@ -556,11 +623,11 @@ def run_command_listener(state):
                 reply = f"🆔 <b>Chat ID:</b> <code>{cid}</code>"
                 if title:
                     reply += f"\n👥 <b>Grup:</b> {_escape_html(title)}"
-                reply += f"\n🎯 <b>Bot hedef CHAT_ID:</b> <code>{_escape_html(TARGET_CHAT_ID)}</code>"
                 send_message(reply, chat_id=cid)
                 state["last_id_reply_ts"] = now_ts
             continue
 
+        # /taipo
         if low.startswith("/taipo"):
             now_ts = int(time.time())
             last_ts = int(state.get("last_command_reply_ts", 0))
@@ -577,8 +644,8 @@ def run_command_listener(state):
                     f"🕒 {now_str_tr()}\n\n"
                     f"⚠️ Bugün liste henüz oluşmadı.\n"
                     f"⏰ Seçim aralığı: 10:00–10:10 (hafta içi)\n"
-                    f"🎯 Band (auto): {EARLY_MIN_PCT:.2f}% – {EARLY_MAX_PCT:.2f}%\n"
-                    f"🎯 ENV CHAT_ID: <code>{_escape_html(TARGET_CHAT_ID)}</code>\n"
+                    f"🎯 Band hedef: 0.40% – 0.90% (auto genişler)\n"
+                    f"🕒 Takip: 11:30–17:30 saat başı\n"
                 )
                 state, base = append_news_to_text(state, base)
                 send_message(base, chat_id=msg_chat_id(msg))
@@ -593,7 +660,7 @@ def main():
     state = load_json(STATE_FILE, {})
     state = ensure_today_state(state)
 
-    # komutları yakala
+    # Always listen commands first (AUTO mode too)
     state = run_command_listener(state)
 
     if MODE == "COMMAND":
