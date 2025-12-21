@@ -5,13 +5,20 @@ on:
   schedule:
     - cron: "*/1 * * * *"
 
+permissions:
+  contents: write
+
 jobs:
   run-command:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -30,4 +37,5 @@ jobs:
           CHAT_ID: ${{ secrets.CHAT_ID }}
           MODE: COMMAND
           COMMAND_MAX_AGE_SEC: "600"
+          PERSIST_STATE: "1"
         run: python main.py
