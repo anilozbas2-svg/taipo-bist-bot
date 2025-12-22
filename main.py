@@ -10,6 +10,9 @@ import requests
 import yfinance as yf
 import feedparser
 
+# ✅ NEW: toplu veri için pandas gerekir
+import pandas as pd
+
 # =========================================================
 # TAIPO-BIST v3 PRO (Plan A Ready)
 # - Pick: 10:00–10:10 (TR)
@@ -37,10 +40,6 @@ TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 # =========================
 # PLAN A (state.json persistence)
 # =========================
-# If PERSIST_STATE=1, bot will try to git commit & push state.json when it changes.
-# Requires GitHub Actions workflow:
-# - actions/checkout with a token
-# - permissions: contents: write
 PERSIST_STATE = os.getenv("PERSIST_STATE", "0").strip() == "1"
 
 # =========================
@@ -116,18 +115,27 @@ def ensure_files():
             NEWS_STATE_KEY: {}
         })
 
+def _normalize_symbol(s: str) -> str:
+    s = (s or "").strip().upper()
+    if not s:
+        return ""
+    # yorum satırı destekle
+    if s.startswith("#") or s.startswith("//"):
+        return ""
+    # AKBNK veya AKBNK.IS ikisi de kabul
+    if not s.endswith(".IS"):
+        s = s + ".IS"
+    return s
+
 def load_symbols():
     if not os.path.exists(SYMBOLS_FILE):
         return []
     syms = []
     with open(SYMBOLS_FILE, "r", encoding="utf-8") as f:
         for line in f:
-            s = line.strip()
-            if not s:
-                continue
-            if not s.endswith(".IS"):
-                s = s + ".IS"
-            syms.append(s)
+            s = _normalize_symbol(line)
+            if s:
+                syms.append(s)
     # dedupe preserve order
     return list(dict.fromkeys(syms))
 
@@ -235,12 +243,13 @@ def should_send_track_now(state):
     return state.get("last_track_sent_key", "") != key
 
 # =========================
-# DATA
+# DATA (FAST / BULK)
 # =========================
 def fetch_quote(symbol: str):
     """
+    Single symbol quote (used for tracking 3 symbols)
     Returns dict:
-      symbol, price, prev_close, change_pct, volume(optional), avg_volume(optional), vol_ratio(optional)
+      symbol, price, prev_close, change_pct, volume(optional)
     """
     try:
         t = yf.Ticker(symbol)
@@ -249,13 +258,11 @@ def fetch_quote(symbol: str):
         price = None
         prev_close = None
         vol = None
-        avg_vol = None
 
         if fi:
             price = fi.get("last_price") or fi.get("lastPrice")
             prev_close = fi.get("previous_close") or fi.get("previousClose")
             vol = fi.get("last_volume") or fi.get("lastVolume") or fi.get("volume")
-            avg_vol = fi.get("ten_day_average_volume") or fi.get("tenDayAverageVolume") or fi.get("average_volume")
 
         if price is None or prev_close is None:
             hist2 = t.history(period="2d", interval="1d")
@@ -268,19 +275,6 @@ def fetch_quote(symbol: str):
 
         change_pct = ((float(price) - float(prev_close)) / float(prev_close)) * 100.0
 
-        vol_ratio = None
-        try:
-            hist = t.history(period="30d", interval="1d")
-            if hist is not None and len(hist) >= 10 and "Volume" in hist.columns:
-                last_vol = float(hist["Volume"].iloc[-1])
-                avg20 = float(hist["Volume"].tail(20).mean())
-                if last_vol and avg20 and avg20 > 0:
-                    vol = last_vol
-                    avg_vol = avg20
-                    vol_ratio = last_vol / avg20
-        except Exception:
-            pass
-
         out = {
             "symbol": symbol,
             "price": round(float(price), 2),
@@ -289,21 +283,115 @@ def fetch_quote(symbol: str):
         }
         if vol is not None:
             out["volume"] = float(vol)
-        if avg_vol is not None:
-            out["avg_volume"] = float(avg_vol)
-        if vol_ratio is not None:
-            out["vol_ratio"] = round(float(vol_ratio), 2)
 
         return out
     except Exception:
         return None
 
-def scan_quotes(symbols):
+def scan_quotes_bulk(symbols):
+    """
+    ✅ Bulk fetch for pick window (fast)
+    Uses:
+      - intraday 1m for last price & last volume
+      - daily for prev close + avg volume
+    """
+    if not symbols:
+        return []
+
+    # yfinance bazı ortamlarda uyarı basar, sessiz kalsın
+    try:
+        intraday = yf.download(
+            tickers=symbols,
+            period="1d",
+            interval="1m",
+            group_by="ticker",
+            threads=True,
+            auto_adjust=False,
+            progress=False,
+        )
+    except Exception:
+        intraday = None
+
+    try:
+        daily = yf.download(
+            tickers=symbols,
+            period="10d",
+            interval="1d",
+            group_by="ticker",
+            threads=True,
+            auto_adjust=False,
+            progress=False,
+        )
+    except Exception:
+        daily = None
+
     out = []
+
     for sym in symbols:
-        q = fetch_quote(sym)
-        if q:
+        try:
+            # intraday parse
+            last_price = None
+            last_vol = None
+
+            if isinstance(intraday, pd.DataFrame) and not intraday.empty:
+                if isinstance(intraday.columns, pd.MultiIndex):
+                    if sym in intraday.columns.get_level_values(0):
+                        df_i = intraday[sym].dropna()
+                        if not df_i.empty:
+                            last_price = float(df_i["Close"].iloc[-1])
+                            if "Volume" in df_i.columns:
+                                last_vol = float(df_i["Volume"].iloc[-1])
+                else:
+                    # tek sembol gibi döndüyse
+                    df_i = intraday.dropna()
+                    if not df_i.empty and "Close" in df_i.columns:
+                        last_price = float(df_i["Close"].iloc[-1])
+                        if "Volume" in df_i.columns:
+                            last_vol = float(df_i["Volume"].iloc[-1])
+
+            # daily parse
+            prev_close = None
+            avg_vol = None
+
+            if isinstance(daily, pd.DataFrame) and not daily.empty:
+                if isinstance(daily.columns, pd.MultiIndex):
+                    if sym in daily.columns.get_level_values(0):
+                        df_d = daily[sym].dropna()
+                        if len(df_d) >= 2 and "Close" in df_d.columns:
+                            prev_close = float(df_d["Close"].iloc[-2])
+                        if "Volume" in df_d.columns and len(df_d) >= 5:
+                            avg_vol = float(df_d["Volume"].tail(10).mean())
+                else:
+                    df_d = daily.dropna()
+                    if len(df_d) >= 2 and "Close" in df_d.columns:
+                        prev_close = float(df_d["Close"].iloc[-2])
+                    if "Volume" in df_d.columns and len(df_d) >= 5:
+                        avg_vol = float(df_d["Volume"].tail(10).mean())
+
+            if last_price is None or prev_close in (None, 0):
+                continue
+
+            change_pct = ((last_price - prev_close) / prev_close) * 100.0
+
+            q = {
+                "symbol": sym,
+                "price": round(float(last_price), 2),
+                "prev_close": round(float(prev_close), 2),
+                "change_pct": round(float(change_pct), 2),
+            }
+
+            if last_vol is not None:
+                q["volume"] = float(last_vol)
+
+            # basit vol ratio: anlık volume / avg daily volume
+            if last_vol is not None and avg_vol and avg_vol > 0:
+                q["avg_volume"] = float(avg_vol)
+                q["vol_ratio"] = round(float(last_vol / avg_vol), 2)
+
             out.append(q)
+        except Exception:
+            continue
+
     return out
 
 def _rank_score(q: dict) -> float:
@@ -516,7 +604,8 @@ def try_pick_once(state, symbols):
     if not in_pick_window():
         return state, None, None
 
-    quotes = scan_quotes(symbols)
+    # ✅ bulk scan
+    quotes = scan_quotes_bulk(symbols)
     if not quotes:
         return state, None, None
 
@@ -580,11 +669,9 @@ def run_command_listener(state):
         if not text:
             continue
 
-        # only target chat (if set)
         if TARGET_CHAT_ID and not is_target_chat(msg):
             continue
 
-        # ignore ancient commands
         if not is_fresh_command(msg):
             continue
 
@@ -655,7 +742,6 @@ def _git_has_changes(path: str) -> bool:
 def persist_state_if_enabled():
     if not PERSIST_STATE:
         return
-    # only attempt inside a git repo
     if not os.path.exists(".git"):
         return
     if not _git_has_changes(STATE_FILE):
@@ -669,7 +755,6 @@ def persist_state_if_enabled():
         subprocess.run(["git", "commit", "-m", "chore: update state"], check=False)
         subprocess.run(["git", "push"], check=False)
     except Exception:
-        # never crash bot due to git
         pass
 
 def main():
