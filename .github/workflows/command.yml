@@ -3,7 +3,8 @@ name: TAIPO BIST - COMMAND
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/2 * * * *"   # 2 dakikada bir (daha stabil)
+    # Her 6 saatte bir workflow başlar, içeride 5.5 saat dinler
+    - cron: "0 */6 * * 1-5"
 
 concurrency:
   group: taipo-bist-command
@@ -12,7 +13,7 @@ concurrency:
 jobs:
   run-command:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 360
 
     steps:
       - name: Checkout
@@ -29,10 +30,15 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run COMMAND
+      - name: Run COMMAND (listen loop)
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
           MODE: COMMAND
           COMMAND_MAX_AGE_SEC: "900"
-        run: python main.py
+        run: |
+          # 5.5 saat boyunca 25 saniyede bir Telegram komutlarını dinle
+          for i in {1..792}; do
+            python main.py
+            sleep 25
+          done
