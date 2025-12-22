@@ -3,23 +3,20 @@ name: TAIPO BIST - AUTO
 on:
   workflow_dispatch:
   schedule:
-    # Hafta içi (Pzt-Cuma) her dakika çalışır (asıl zaman kontrolü main.py içinde)
-    - cron: "*/1 * * * 1-5"
+    - cron: "*/2 * * * 1-5"   # hafta içi 2 dakikada bir
 
-permissions:
-  contents: write
+concurrency:
+  group: taipo-bist-auto
+  cancel-in-progress: true
 
 jobs:
   run-auto:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: true
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -37,6 +34,4 @@ jobs:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
           MODE: AUTO
-          COMMAND_MAX_AGE_SEC: "600"
-          PERSIST_STATE: "1"
         run: python main.py
