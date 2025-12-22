@@ -3,22 +3,20 @@ name: TAIPO BIST - COMMAND
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/1 * * * *"
+    - cron: "*/2 * * * *"   # 2 dakikada bir (daha stabil)
 
-permissions:
-  contents: write
+concurrency:
+  group: taipo-bist-command
+  cancel-in-progress: true
 
 jobs:
   run-command:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: true
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -36,6 +34,5 @@ jobs:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
           MODE: COMMAND
-          COMMAND_MAX_AGE_SEC: "600"
-          PERSIST_STATE: "1"
+          COMMAND_MAX_AGE_SEC: "900"
         run: python main.py
