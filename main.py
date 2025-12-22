@@ -10,15 +10,12 @@ import requests
 import yfinance as yf
 import feedparser
 
-# ✅ NEW: toplu veri için pandas gerekir
-import pandas as pd
-
 # =========================================================
 # TAIPO-BIST v3 PRO (Plan A Ready)
 # - Pick: 10:00–10:10 (TR)
 # - Track: 11:30..17:30 (TR) hourly
 # - Band target: +0.40% to +0.90% (auto widen)
-# - Anti-spam: /id only when requested, cooldown, ignore old commands
+# - Command listener: long polling (faster response)
 # - News: only new items (7d memory) and only if exists
 # - Optional: Persist state.json to repo (Plan A) via git commit/push
 # =========================================================
@@ -29,7 +26,10 @@ import pandas as pd
 TZ = ZoneInfo("Europe/Istanbul")
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
-TARGET_CHAT_ID = os.getenv("CHAT_ID", "").strip()  # group chat id like -100...
+
+# Backward compatible: accept CHAT_ID or TARGET_CHAT_ID
+TARGET_CHAT_ID = os.getenv("CHAT_ID", "").strip() or os.getenv("TARGET_CHAT_ID", "").strip()  # group id like -100...
+
 MODE = os.getenv("MODE", "AUTO").strip().upper()   # AUTO or COMMAND
 
 STATE_FILE = "state.json"
@@ -48,7 +48,6 @@ PERSIST_STATE = os.getenv("PERSIST_STATE", "0").strip() == "1"
 PICK_START_HOUR = 10
 PICK_START_MIN = 0
 PICK_END_MIN = 10
-
 PICK_COUNT = 3
 
 AUTO_BAND_STEPS = [
@@ -70,16 +69,20 @@ TRACK_MINUTE_TR = 30
 # =========================
 # COMMAND / ANTI-SPAM
 # =========================
-REPLY_COOLDOWN_SEC = 10
-ID_COOLDOWN_SEC = 30
+REPLY_COOLDOWN_SEC = 2
+ID_COOLDOWN_SEC = 10
 
-COMMAND_MAX_AGE_SEC = int(os.getenv("COMMAND_MAX_AGE_SEC", "600"))  # 10 min default
+COMMAND_MAX_AGE_SEC = int(os.getenv("COMMAND_MAX_AGE_SEC", "900"))  # 15 min default
+
+# Telegram getUpdates long polling timeout (seconds)
+UPDATES_LONGPOLL_TIMEOUT = int(os.getenv("UPDATES_LONGPOLL_TIMEOUT", "20"))
 
 # =========================
 # NEWS
 # =========================
 NEWS_MAX_ITEMS = 3
 NEWS_STATE_KEY = "news_seen"  # title->ts
+
 
 # =========================
 # IO HELPERS
@@ -91,11 +94,13 @@ def load_json(path: str, default):
     except Exception:
         return default
 
+
 def save_json(path: str, data):
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     os.replace(tmp, path)
+
 
 def ensure_files():
     if not os.path.exists(STATE_FILE):
@@ -115,17 +120,6 @@ def ensure_files():
             NEWS_STATE_KEY: {}
         })
 
-def _normalize_symbol(s: str) -> str:
-    s = (s or "").strip().upper()
-    if not s:
-        return ""
-    # yorum satırı destekle
-    if s.startswith("#") or s.startswith("//"):
-        return ""
-    # AKBNK veya AKBNK.IS ikisi de kabul
-    if not s.endswith(".IS"):
-        s = s + ".IS"
-    return s
 
 def load_symbols():
     if not os.path.exists(SYMBOLS_FILE):
@@ -133,17 +127,25 @@ def load_symbols():
     syms = []
     with open(SYMBOLS_FILE, "r", encoding="utf-8") as f:
         for line in f:
-            s = _normalize_symbol(line)
-            if s:
-                syms.append(s)
+            s = line.strip()
+            if not s:
+                continue
+            # allow comments
+            if s.startswith("#"):
+                continue
+            if not s.endswith(".IS"):
+                s = s + ".IS"
+            syms.append(s.upper())
     # dedupe preserve order
     return list(dict.fromkeys(syms))
+
 
 # =========================
 # TELEGRAM
 # =========================
 def _escape_html(s: str) -> str:
     return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
 
 def send_message(text: str, chat_id: str = None) -> bool:
     if not chat_id:
@@ -163,34 +165,45 @@ def send_message(text: str, chat_id: str = None) -> bool:
     except Exception:
         return False
 
+
 def get_updates(offset: int):
+    """Long polling getUpdates for faster command capture."""
     if not BOT_TOKEN:
         return []
-    params = {"timeout": 0, "offset": offset}
+    params = {
+        "timeout": UPDATES_LONGPOLL_TIMEOUT,
+        "offset": offset
+    }
     try:
-        r = requests.get(f"{TELEGRAM_API}/getUpdates", params=params, timeout=20)
+        r = requests.get(f"{TELEGRAM_API}/getUpdates", params=params, timeout=UPDATES_LONGPOLL_TIMEOUT + 10)
         data = r.json()
         return data.get("result", []) if data.get("ok") else []
     except Exception:
         return []
 
+
 def extract_message(update: dict):
     return update.get("message") or update.get("edited_message")
 
+
 def msg_text(msg: dict):
     return (msg.get("text") or "").strip()
+
 
 def msg_chat_id(msg: dict):
     chat = msg.get("chat") or {}
     return str(chat.get("id", ""))
 
+
 def msg_chat_title(msg: dict):
     chat = msg.get("chat") or {}
     return (chat.get("title") or chat.get("username") or "").strip()
 
+
 def is_target_chat(msg: dict):
     cid = msg_chat_id(msg)
     return (TARGET_CHAT_ID and cid == str(TARGET_CHAT_ID))
+
 
 def is_fresh_command(msg: dict) -> bool:
     d = msg.get("date")
@@ -198,20 +211,25 @@ def is_fresh_command(msg: dict) -> bool:
         return True
     return (int(time.time()) - d) <= COMMAND_MAX_AGE_SEC
 
+
 # =========================
 # TIME HELPERS (TR)
 # =========================
 def today_str_tr():
     return datetime.now(TZ).strftime("%Y-%m-%d")
 
+
 def now_str_tr():
     return datetime.now(TZ).strftime("%d.%m.%Y %H:%M")
+
 
 def now_key_minute():
     return datetime.now(TZ).strftime("%Y-%m-%d %H:%M")
 
+
 def is_weekday_tr():
     return datetime.now(TZ).weekday() < 5
+
 
 def ensure_today_state(state):
     if NEWS_STATE_KEY not in state:
@@ -224,6 +242,7 @@ def ensure_today_state(state):
         state["last_track_sent_key"] = ""
     return state
 
+
 def in_pick_window():
     if not is_weekday_tr():
         return False
@@ -232,24 +251,26 @@ def in_pick_window():
         return False
     return PICK_START_MIN <= n.minute <= PICK_END_MIN
 
+
 def is_track_time_now():
     if not is_weekday_tr():
         return False
     n = datetime.now(TZ)
     return (n.hour in TRACK_HOURS_TR) and (n.minute == TRACK_MINUTE_TR)
 
+
 def should_send_track_now(state):
     key = now_key_minute()
     return state.get("last_track_sent_key", "") != key
 
+
 # =========================
-# DATA (FAST / BULK)
+# DATA
 # =========================
 def fetch_quote(symbol: str):
     """
-    Single symbol quote (used for tracking 3 symbols)
     Returns dict:
-      symbol, price, prev_close, change_pct, volume(optional)
+      symbol, price, prev_close, change_pct, volume(optional), avg_volume(optional), vol_ratio(optional)
     """
     try:
         t = yf.Ticker(symbol)
@@ -258,11 +279,13 @@ def fetch_quote(symbol: str):
         price = None
         prev_close = None
         vol = None
+        avg_vol = None
 
         if fi:
             price = fi.get("last_price") or fi.get("lastPrice")
             prev_close = fi.get("previous_close") or fi.get("previousClose")
             vol = fi.get("last_volume") or fi.get("lastVolume") or fi.get("volume")
+            avg_vol = fi.get("ten_day_average_volume") or fi.get("tenDayAverageVolume") or fi.get("average_volume")
 
         if price is None or prev_close is None:
             hist2 = t.history(period="2d", interval="1d")
@@ -275,6 +298,19 @@ def fetch_quote(symbol: str):
 
         change_pct = ((float(price) - float(prev_close)) / float(prev_close)) * 100.0
 
+        vol_ratio = None
+        try:
+            hist = t.history(period="30d", interval="1d")
+            if hist is not None and len(hist) >= 10 and "Volume" in hist.columns:
+                last_vol = float(hist["Volume"].iloc[-1])
+                avg20 = float(hist["Volume"].tail(20).mean())
+                if last_vol and avg20 and avg20 > 0:
+                    vol = last_vol
+                    avg_vol = avg20
+                    vol_ratio = last_vol / avg20
+        except Exception:
+            pass
+
         out = {
             "symbol": symbol,
             "price": round(float(price), 2),
@@ -283,121 +319,30 @@ def fetch_quote(symbol: str):
         }
         if vol is not None:
             out["volume"] = float(vol)
+        if avg_vol is not None:
+            out["avg_volume"] = float(avg_vol)
+        if vol_ratio is not None:
+            out["vol_ratio"] = round(float(vol_ratio), 2)
 
         return out
     except Exception:
         return None
 
-def scan_quotes_bulk(symbols):
-    """
-    ✅ Bulk fetch for pick window (fast)
-    Uses:
-      - intraday 1m for last price & last volume
-      - daily for prev close + avg volume
-    """
-    if not symbols:
-        return []
 
-    # yfinance bazı ortamlarda uyarı basar, sessiz kalsın
-    try:
-        intraday = yf.download(
-            tickers=symbols,
-            period="1d",
-            interval="1m",
-            group_by="ticker",
-            threads=True,
-            auto_adjust=False,
-            progress=False,
-        )
-    except Exception:
-        intraday = None
-
-    try:
-        daily = yf.download(
-            tickers=symbols,
-            period="10d",
-            interval="1d",
-            group_by="ticker",
-            threads=True,
-            auto_adjust=False,
-            progress=False,
-        )
-    except Exception:
-        daily = None
-
+def scan_quotes(symbols):
     out = []
-
     for sym in symbols:
-        try:
-            # intraday parse
-            last_price = None
-            last_vol = None
-
-            if isinstance(intraday, pd.DataFrame) and not intraday.empty:
-                if isinstance(intraday.columns, pd.MultiIndex):
-                    if sym in intraday.columns.get_level_values(0):
-                        df_i = intraday[sym].dropna()
-                        if not df_i.empty:
-                            last_price = float(df_i["Close"].iloc[-1])
-                            if "Volume" in df_i.columns:
-                                last_vol = float(df_i["Volume"].iloc[-1])
-                else:
-                    # tek sembol gibi döndüyse
-                    df_i = intraday.dropna()
-                    if not df_i.empty and "Close" in df_i.columns:
-                        last_price = float(df_i["Close"].iloc[-1])
-                        if "Volume" in df_i.columns:
-                            last_vol = float(df_i["Volume"].iloc[-1])
-
-            # daily parse
-            prev_close = None
-            avg_vol = None
-
-            if isinstance(daily, pd.DataFrame) and not daily.empty:
-                if isinstance(daily.columns, pd.MultiIndex):
-                    if sym in daily.columns.get_level_values(0):
-                        df_d = daily[sym].dropna()
-                        if len(df_d) >= 2 and "Close" in df_d.columns:
-                            prev_close = float(df_d["Close"].iloc[-2])
-                        if "Volume" in df_d.columns and len(df_d) >= 5:
-                            avg_vol = float(df_d["Volume"].tail(10).mean())
-                else:
-                    df_d = daily.dropna()
-                    if len(df_d) >= 2 and "Close" in df_d.columns:
-                        prev_close = float(df_d["Close"].iloc[-2])
-                    if "Volume" in df_d.columns and len(df_d) >= 5:
-                        avg_vol = float(df_d["Volume"].tail(10).mean())
-
-            if last_price is None or prev_close in (None, 0):
-                continue
-
-            change_pct = ((last_price - prev_close) / prev_close) * 100.0
-
-            q = {
-                "symbol": sym,
-                "price": round(float(last_price), 2),
-                "prev_close": round(float(prev_close), 2),
-                "change_pct": round(float(change_pct), 2),
-            }
-
-            if last_vol is not None:
-                q["volume"] = float(last_vol)
-
-            # basit vol ratio: anlık volume / avg daily volume
-            if last_vol is not None and avg_vol and avg_vol > 0:
-                q["avg_volume"] = float(avg_vol)
-                q["vol_ratio"] = round(float(last_vol / avg_vol), 2)
-
+        q = fetch_quote(sym)
+        if q:
             out.append(q)
-        except Exception:
-            continue
-
     return out
+
 
 def _rank_score(q: dict) -> float:
     vr = float(q.get("vol_ratio", 0.0) or 0.0)
     cp = float(q.get("change_pct", 0.0) or 0.0)
     return vr * 10.0 + cp
+
 
 def pick_breakouts_with_auto_band(quotes, n=3):
     quotes_pos = [q for q in quotes if float(q.get("change_pct", 0)) > 0]
@@ -417,12 +362,14 @@ def pick_breakouts_with_auto_band(quotes, n=3):
 
     return [], None
 
+
 # =========================
 # NEWS (RSS)
 # =========================
 def _google_news_rss_url(query: str) -> str:
     q = quote(query)
     return f"https://news.google.com/rss/search?q={q}&hl=tr&gl=TR&ceid=TR:tr"
+
 
 def normalize_url(u: str) -> str:
     try:
@@ -434,6 +381,7 @@ def normalize_url(u: str) -> str:
         return urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, parts.fragment))
     except Exception:
         return u
+
 
 def fetch_bist_news_items():
     queries = [
@@ -466,6 +414,7 @@ def fetch_bist_news_items():
         uniq.append(it)
     return uniq
 
+
 def pick_new_news_for_message(state, items, max_items=NEWS_MAX_ITEMS):
     now_ts = int(time.time())
     seen_map = state.get(NEWS_STATE_KEY, {}) or {}
@@ -488,6 +437,7 @@ def pick_new_news_for_message(state, items, max_items=NEWS_MAX_ITEMS):
     state[NEWS_STATE_KEY] = seen_map
     return state, selected
 
+
 def build_news_block(selected_items):
     if not selected_items:
         return ""
@@ -500,6 +450,7 @@ def build_news_block(selected_items):
         lines.append(f"• 🔥 {title} — <a href=\"{link}\">Haberi aç</a>")
     return "\n".join(lines)
 
+
 def append_news_to_text(state, base_text: str):
     try:
         items = fetch_bist_news_items()
@@ -511,17 +462,21 @@ def append_news_to_text(state, base_text: str):
     except Exception:
         return state, base_text
 
+
 # =========================
 # FORMAT
 # =========================
 def clean_sym(sym: str):
     return sym.replace(".IS", "")
 
+
 def trend_emoji(pct: float):
     return "🟢⬆️" if pct >= 0 else "🔴⬇️"
 
+
 def pct_str(pct: float):
     return f"+{pct:.2f}%" if pct >= 0 else f"{pct:.2f}%"
+
 
 def build_pick_message(picks, picked_at, band_used):
     lo, hi = band_used
@@ -547,6 +502,7 @@ def build_pick_message(picks, picked_at, band_used):
     lines.append("🕒 Takip: 11:30 • 12:30 • 13:30 • 14:30 • 15:30 • 16:30 • 17:30")
     lines.append("⌨️ Komut: <code>/taipo</code>  | Test: <code>/ping</code>  | ID: <code>/id</code>")
     return "\n".join(lines)
+
 
 def build_track_message(state):
     watch = state.get("watch", {})
@@ -594,6 +550,7 @@ def build_track_message(state):
     lines.append("⌨️ <code>/taipo</code>")
     return "\n".join(lines)
 
+
 # =========================
 # CORE LOGIC
 # =========================
@@ -604,8 +561,7 @@ def try_pick_once(state, symbols):
     if not in_pick_window():
         return state, None, None
 
-    # ✅ bulk scan
-    quotes = scan_quotes_bulk(symbols)
+    quotes = scan_quotes(symbols)
     if not quotes:
         return state, None, None
 
@@ -623,6 +579,7 @@ def try_pick_once(state, symbols):
     state["sent_pick_message"] = True
 
     return state, picks, band
+
 
 # =========================
 # MODES
@@ -652,6 +609,7 @@ def run_auto(state):
 
     return state
 
+
 def run_command_listener(state):
     last_update_id = int(state.get("last_update_id", 0))
     updates = get_updates(last_update_id + 1)
@@ -669,9 +627,11 @@ def run_command_listener(state):
         if not text:
             continue
 
+        # only target chat (if set)
         if TARGET_CHAT_ID and not is_target_chat(msg):
             continue
 
+        # ignore ancient commands
         if not is_fresh_command(msg):
             continue
 
@@ -729,6 +689,7 @@ def run_command_listener(state):
     state["last_update_id"] = max_uid
     return state
 
+
 # =========================
 # PLAN A: Git persist state.json
 # =========================
@@ -738,6 +699,7 @@ def _git_has_changes(path: str) -> bool:
         return bool(r.stdout.strip())
     except Exception:
         return False
+
 
 def persist_state_if_enabled():
     if not PERSIST_STATE:
@@ -757,6 +719,7 @@ def persist_state_if_enabled():
     except Exception:
         pass
 
+
 def main():
     ensure_files()
     state = load_json(STATE_FILE, {})
@@ -773,6 +736,7 @@ def main():
     state = run_auto(state)
     save_json(STATE_FILE, state)
     persist_state_if_enabled()
+
 
 if __name__ == "__main__":
     main()
