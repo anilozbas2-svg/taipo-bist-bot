@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import os
 import json
 import time
@@ -12,16 +13,12 @@ import feedparser
 import pandas as pd
 
 # =========================================================
-# TAIPO-BIST v3.1 PRO (Plan A Ready)
-# ✅ 2 kırılım penceresi:
-#    - Pencere 1: 10:06–10:11 (ilk kırılım)
-#    - Pencere 2: 10:30–10:35 (ikinci şans)
-# ✅ Takip mesajları:
-#    - 11:00, 12:00, 13:00, 14:00, 15:00, 16:00, 17:30
-# ✅ Kapanış raporu:
-#    - 18:05 (BIST kapanış sonrası)
-# ✅ "Skor" ve 🧠 beyin emojisi KALDIRILDI
-# ✅ Market saatleri dışında otomatik mesaj spamı engellendi
+# TAIPO-BIST v3 PRO+ (Plan A Ready)
+# - /taipo PRO: breadth + top gainers/losers + radar score + news
+# - Modes: /taipo, /taipo pro, /taipo top, /taipo news, /taipo help
+# - Alerts: abs move >= threshold (daily once)
+# - EOD report: 17:35 TR
+# - Cache: movers cached for 2 minutes (fast response)
 # =========================================================
 
 # =========================
@@ -44,37 +41,12 @@ TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 PERSIST_STATE = os.getenv("PERSIST_STATE", "0").strip() == "1"
 
 # =========================
-# MARKET HOURS (TR)
+# PICK SETTINGS
 # =========================
-MARKET_OPEN_HOUR = 10
-MARKET_OPEN_MIN = 0
-MARKET_CLOSE_HOUR = 18
-MARKET_CLOSE_MIN = 0
-
-def is_market_time_now():
-    """Market saatlerinde mi? (10:00–18:00 TR)"""
-    if not is_weekday_tr():
-        return False
-    n = datetime.now(TZ)
-    start = n.replace(hour=MARKET_OPEN_HOUR, minute=MARKET_OPEN_MIN, second=0, microsecond=0)
-    end = n.replace(hour=MARKET_CLOSE_HOUR, minute=MARKET_CLOSE_MIN, second=0, microsecond=0)
-    return start <= n <= end
-
-# =========================
-# PICK WINDOWS
-# =========================
-# Pencere 1: 10:06–10:11
-PICK1_HOUR = 10
-PICK1_START_MIN = 6
-PICK1_END_MIN = 11
-
-# Pencere 2: 10:30–10:35
-PICK2_HOUR = 10
-PICK2_START_MIN = 30
-PICK2_END_MIN = 35
-
+PICK_START_HOUR = 10
+PICK_START_MIN = 0
+PICK_END_MIN = 10
 PICK_COUNT = 3
-MAX_WATCH_TOTAL = 6
 
 AUTO_BAND_STEPS = [
     (0.40, 0.90),
@@ -89,12 +61,8 @@ AUTO_BAND_STEPS = [
 # =========================
 # TRACK SETTINGS
 # =========================
-# 11,12,13,14,15,16 => :00
-TRACK_HOURS_ON_THE_HOUR = {11, 12, 13, 14, 15, 16}
-TRACK_MINUTE_ON_THE_HOUR = 0
-# son takip
-TRACK_LAST_HOUR = 17
-TRACK_LAST_MINUTE = 30
+TRACK_HOURS_TR = {11, 12, 13, 14, 15, 16, 17}
+TRACK_MINUTE_TR = 30
 
 # =========================
 # COMMAND / ANTI-SPAM
@@ -110,14 +78,15 @@ NEWS_MAX_ITEMS = 3
 NEWS_STATE_KEY = "news_seen"  # title->ts
 
 # =========================
-# MOVERS / Cache / EOD
+# PRO: Movers / Alerts / Cache / EOD
 # =========================
 MOVERS_TOP_N = 5
 MOVERS_CACHE_SEC = 120  # 2 min cache
+ALERT_ABS_PCT = float(os.getenv("ALERT_ABS_PCT", "2.00"))
+ALERT_COOLDOWN_SEC = 6 * 60 * 60  # 6 saat
 
-# Kapanış raporu (BIST kapanış sonrası)
-EOD_REPORT_HOUR = 18
-EOD_REPORT_MIN = 5
+EOD_REPORT_HOUR = 17
+EOD_REPORT_MIN = 35
 
 # =========================
 # IO HELPERS
@@ -129,32 +98,33 @@ def load_json(path: str, default):
     except Exception:
         return default
 
+
 def save_json(path: str, data):
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     os.replace(tmp, path)
 
+
 def ensure_files():
     if not os.path.exists(STATE_FILE):
-        save_json(STATE_FILE, {
-            "last_update_id": 0,
-            "last_command_reply_ts": 0,
-            "last_id_reply_ts": 0,
-            "day": "",
-            "watch": {
-                "symbols": [],
-                "baseline": {},
-                "picked_at": "",
-                "band_used": "",
-                "pick1_done": False,
-                "pick2_done": False
+        save_json(
+            STATE_FILE,
+            {
+                "last_update_id": 0,
+                "last_command_reply_ts": 0,
+                "last_id_reply_ts": 0,
+                "day": "",
+                "watch": {"symbols": [], "baseline": {}, "picked_at": "", "band_used": ""},
+                "sent_pick_message": False,
+                "last_track_sent_key": "",
+                NEWS_STATE_KEY: {},
+                "movers_cache": {"ts": 0, "data": None},
+                "alerts": {},
+                "eod_sent_day": "",
             },
-            "last_track_sent_key": "",
-            NEWS_STATE_KEY: {},
-            "movers_cache": {"ts": 0, "data": None},
-            "eod_sent_day": "",
-        })
+        )
+
 
 def _normalize_symbol(s: str) -> str:
     s = (s or "").strip().upper()
@@ -165,6 +135,7 @@ def _normalize_symbol(s: str) -> str:
     if not s.endswith(".IS"):
         s = s + ".IS"
     return s
+
 
 def load_symbols():
     if not os.path.exists(SYMBOLS_FILE):
@@ -183,6 +154,7 @@ def load_symbols():
 def _escape_html(s: str) -> str:
     return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
+
 def send_message(text: str, chat_id: str = None) -> bool:
     if not chat_id:
         chat_id = TARGET_CHAT_ID
@@ -192,13 +164,14 @@ def send_message(text: str, chat_id: str = None) -> bool:
         "chat_id": chat_id,
         "text": text,
         "parse_mode": "HTML",
-        "disable_web_page_preview": True
+        "disable_web_page_preview": True,
     }
     try:
         r = requests.post(f"{TELEGRAM_API}/sendMessage", json=payload, timeout=20)
         return r.status_code == 200
     except Exception:
         return False
+
 
 def get_updates(offset: int):
     if not BOT_TOKEN:
@@ -211,23 +184,29 @@ def get_updates(offset: int):
     except Exception:
         return []
 
+
 def extract_message(update: dict):
     return update.get("message") or update.get("edited_message")
 
+
 def msg_text(msg: dict):
     return (msg.get("text") or "").strip()
+
 
 def msg_chat_id(msg: dict):
     chat = msg.get("chat") or {}
     return str(chat.get("id", ""))
 
+
 def msg_chat_title(msg: dict):
     chat = msg.get("chat") or {}
     return (chat.get("title") or chat.get("username") or "").strip()
 
+
 def is_target_chat(msg: dict):
     cid = msg_chat_id(msg)
-    return (TARGET_CHAT_ID and cid == str(TARGET_CHAT_ID))
+    return TARGET_CHAT_ID and cid == str(TARGET_CHAT_ID)
+
 
 def is_fresh_command(msg: dict) -> bool:
     d = msg.get("date")
@@ -241,67 +220,60 @@ def is_fresh_command(msg: dict) -> bool:
 def today_str_tr():
     return datetime.now(TZ).strftime("%Y-%m-%d")
 
+
 def now_str_tr():
     return datetime.now(TZ).strftime("%d.%m.%Y %H:%M")
+
 
 def now_key_minute():
     return datetime.now(TZ).strftime("%Y-%m-%d %H:%M")
 
+
 def is_weekday_tr():
     return datetime.now(TZ).weekday() < 5
+
 
 def ensure_today_state(state):
     if NEWS_STATE_KEY not in state:
         state[NEWS_STATE_KEY] = {}
     if "movers_cache" not in state:
         state["movers_cache"] = {"ts": 0, "data": None}
+    if "alerts" not in state:
+        state["alerts"] = {}
     if "eod_sent_day" not in state:
         state["eod_sent_day"] = ""
 
-    # reset per-day
     if state.get("day") != today_str_tr():
         state["day"] = today_str_tr()
-        state["watch"] = {
-            "symbols": [],
-            "baseline": {},
-            "picked_at": "",
-            "band_used": "",
-            "pick1_done": False,
-            "pick2_done": False
-        }
+        state["watch"] = {"symbols": [], "baseline": {}, "picked_at": "", "band_used": ""}
+        state["sent_pick_message"] = False
         state["last_track_sent_key"] = ""
         state["movers_cache"] = {"ts": 0, "data": None}
+        state["alerts"] = {}
         state["eod_sent_day"] = ""
     return state
 
-def pick_window_id_now():
-    """1 => 10:06–10:11, 2 => 10:30–10:35, None => değil"""
+
+def in_pick_window():
     if not is_weekday_tr():
-        return None
+        return False
     n = datetime.now(TZ)
-    if n.hour != 10:
-        return None
-    if PICK1_START_MIN <= n.minute <= PICK1_END_MIN:
-        return 1
-    if PICK2_START_MIN <= n.minute <= PICK2_END_MIN:
-        return 2
-    return None
+    if n.hour != PICK_START_HOUR:
+        return False
+    return PICK_START_MIN <= n.minute <= PICK_END_MIN
+
 
 def is_track_time_now():
     if not is_weekday_tr():
         return False
-    if not is_market_time_now():
-        return False
     n = datetime.now(TZ)
-    if (n.hour in TRACK_HOURS_ON_THE_HOUR) and (n.minute == TRACK_MINUTE_ON_THE_HOUR):
-        return True
-    if (n.hour == TRACK_LAST_HOUR) and (n.minute == TRACK_LAST_MINUTE):
-        return True
-    return False
+    return (n.hour in TRACK_HOURS_TR) and (n.minute == TRACK_MINUTE_TR)
+
 
 def should_send_track_now(state):
     key = now_key_minute()
     return state.get("last_track_sent_key", "") != key
+
 
 def is_eod_time_now():
     if not is_weekday_tr():
@@ -342,6 +314,7 @@ def fetch_quote(symbol: str):
         }
     except Exception:
         return None
+
 
 def scan_quotes_bulk_intraday(symbols):
     """Bulk scan during pick window (intraday 1m + daily)."""
@@ -434,8 +407,9 @@ def scan_quotes_bulk_intraday(symbols):
 
     return out
 
+
 def scan_daily_movers(symbols):
-    """Top/bottom 5 için daha hafif tarama."""
+    """PRO movers (top/bottom) için hafif tarama + Radar Score."""
     if not symbols:
         return []
 
@@ -482,16 +456,24 @@ def scan_daily_movers(symbols):
                 if avg_vol > 0:
                     vol_ratio = last_vol / avg_vol
 
-            out.append({
-                "symbol": sym,
-                "price": round(last_close, 2),
-                "change_pct": round(change_pct, 2),
-                "vol_ratio": round(vol_ratio, 2) if vol_ratio is not None else None,
-            })
+            score = float(change_pct)
+            if vol_ratio is not None:
+                score += float(vol_ratio) * 0.35
+
+            out.append(
+                {
+                    "symbol": sym,
+                    "price": round(last_close, 2),
+                    "change_pct": round(change_pct, 2),
+                    "vol_ratio": round(vol_ratio, 2) if vol_ratio is not None else None,
+                    "score": round(score, 2),
+                }
+            )
         except Exception:
             continue
 
     return out
+
 
 def pick_breakouts_with_auto_band(quotes, n=3):
     quotes_pos = [q for q in quotes if float(q.get("change_pct", 0)) > 0]
@@ -523,6 +505,7 @@ def _google_news_rss_url(query: str) -> str:
     q = quote(query)
     return f"https://news.google.com/rss/search?q={q}&hl=tr&gl=TR&ceid=TR:tr"
 
+
 def normalize_url(u: str) -> str:
     try:
         parts = urlsplit(u)
@@ -534,6 +517,7 @@ def normalize_url(u: str) -> str:
     except Exception:
         return u
 
+
 def fetch_bist_news_items():
     queries = [
         '"Borsa İstanbul" OR BIST OR "BIST 100"',
@@ -541,7 +525,6 @@ def fetch_bist_news_items():
         'SPK OR "Sermaye Piyasası Kurulu"',
         'temettü OR bedelsiz OR "pay geri alım" OR "sermaye artırımı"',
     ]
-
     items = []
     for q in queries:
         url = _google_news_rss_url(q)
@@ -561,6 +544,7 @@ def fetch_bist_news_items():
         seen_titles.add(key)
         uniq.append(it)
     return uniq
+
 
 def pick_new_news_for_message(state, items, max_items=NEWS_MAX_ITEMS):
     now_ts = int(time.time())
@@ -584,15 +568,17 @@ def pick_new_news_for_message(state, items, max_items=NEWS_MAX_ITEMS):
     state[NEWS_STATE_KEY] = seen_map
     return state, selected
 
+
 def build_news_block(selected_items):
     if not selected_items:
         return ""
-    lines = ["📰 <b>Haber</b> (yeni • max 3)"]
+    lines = ["📰 <b>Haber Radar</b> (max 3 • yeni)"]
     for it in selected_items:
         title = _escape_html(it["title"])
         link = it["link"]
-        lines.append(f"• {title} — <a href=\"{link}\">Aç</a>")
+        lines.append(f"• 🔥 {title} — <a href=\"{link}\">Haberi aç</a>")
     return "\n".join(lines)
+
 
 def append_news_to_text(state, base_text: str):
     try:
@@ -611,15 +597,22 @@ def append_news_to_text(state, base_text: str):
 def clean_sym(sym: str):
     return sym.replace(".IS", "")
 
+
 def trend_emoji(pct: float):
     return "🟢⬆️" if pct >= 0 else "🔴⬇️"
+
 
 def pct_str(pct: float):
     return f"+{pct:.2f}%" if pct >= 0 else f"{pct:.2f}%"
 
+
+def score_str(score: float):
+    return f"{score:.2f}"
+
+
 def build_movers_block(movers, top_n=5):
     if not movers:
-        return "⚠️ Günlük +/− verisi alınamadı."
+        return "⚠️ Movers verisi alınamadı."
 
     pos = sum(1 for m in movers if float(m.get("change_pct", 0)) > 0)
     neg = sum(1 for m in movers if float(m.get("change_pct", 0)) < 0)
@@ -631,71 +624,86 @@ def build_movers_block(movers, top_n=5):
 
     lines = []
     lines.append("┌──────────────────────────────")
-    lines.append("│ 📌 <b>BUGÜN ÖZET</b>")
+    lines.append("│ 📌 <b>MARKET ÖZET</b>")
     lines.append(f"│ 🟢 Artıda: <b>{pos}</b>  🔴 Ekside: <b>{neg}</b>  ⚪️ Yatay: <b>{flat}</b>")
     lines.append("└──────────────────────────────")
     lines.append("")
-    lines.append("📈 <b>İlk 5 Artıda</b>")
+    lines.append("📈 <b>En Çok Yükselen 5</b>")
     for m in top:
         sym = clean_sym(m["symbol"])
         vr = m.get("vol_ratio")
         vr_txt = f" • hacim x{vr:.2f}" if isinstance(vr, (int, float)) else ""
-        lines.append(f"• <code>{sym}</code> {m['price']:.2f}  {trend_emoji(m['change_pct'])} {pct_str(m['change_pct'])}{vr_txt}")
+        lines.append(
+            f"• <code>{sym}</code> {m['price']:.2f}  {trend_emoji(m['change_pct'])} {pct_str(m['change_pct'])}  | Skor {score_str(m['score'])}{vr_txt}"
+        )
 
     lines.append("")
-    lines.append("📉 <b>İlk 5 Ekside</b>")
+    lines.append("📉 <b>En Çok Düşen 5</b>")
     for m in bottom:
         sym = clean_sym(m["symbol"])
         vr = m.get("vol_ratio")
         vr_txt = f" • hacim x{vr:.2f}" if isinstance(vr, (int, float)) else ""
-        lines.append(f"• <code>{sym}</code> {m['price']:.2f}  {trend_emoji(m['change_pct'])} {pct_str(m['change_pct'])}{vr_txt}")
+        lines.append(
+            f"• <code>{sym}</code> {m['price']:.2f}  {trend_emoji(m['change_pct'])} {pct_str(m['change_pct'])}  | Skor {score_str(m['score'])}{vr_txt}"
+        )
 
     return "\n".join(lines)
 
-def build_breakout_message(picks, picked_at, band_used, window_id):
-    lo, hi = band_used
-    win_title = "İLK KIRILIM" if window_id == 1 else "İKİNCİ ŞANS KIRILIM"
 
+def build_pick_message(picks, picked_at, band_used):
+    lo, hi = band_used
     lines = []
-    lines.append(f"🚨 <b>{win_title}</b> – TAIPO BIST")
-    lines.append(f"🕒 {picked_at}")
+    lines.append("✅ <b>10:00–10:10 Erken Kırılım</b> – TAIPO BIST v3 PRO+")
     lines.append("")
-    lines.append(f"🎯 Band: {lo:.2f}% – {hi:.2f}%")
+    lines.append("┌──────────────────────────────")
+    lines.append("│ 📊 <b>ERKEN KIRILIM RADAR</b>")
+    lines.append(f"│ {picked_at}")
+    lines.append("└──────────────────────────────")
     lines.append("")
-    lines.append("✅ <b>Kırılım Hisseleri</b>")
+    lines.append(f"🎯 <b>Band (auto):</b> {lo:.2f}% – {hi:.2f}%")
+    lines.append("")
+    lines.append("🟢 <b>Seçilen 3 Hisse</b> (takip listesi)")
     for q in picks:
         sym = clean_sym(q["symbol"])
         vr = q.get("vol_ratio")
         vr_txt = f" • hacim x{vr:.2f}" if isinstance(vr, (int, float)) else ""
-        lines.append(f"• <code>{sym}</code> {q['price']:.2f}  {trend_emoji(q['change_pct'])} {pct_str(q['change_pct'])}{vr_txt}")
+        lines.append(f"• <code>{sym}</code>  {q['price']:.2f}   {trend_emoji(q['change_pct'])}  {pct_str(q['change_pct'])}{vr_txt}")
     lines.append("")
-    lines.append("🧭 Takip saatleri: 11:00 • 12:00 • 13:00 • 14:00 • 15:00 • 16:00 • 17:30")
-    lines.append("⌨️ <code>/taipo</code> | <code>/taipo top</code> | <code>/taipo news</code> | <code>/ping</code> | <code>/id</code>")
+    lines.append("🕒 Takip: 11:30 • 12:30 • 13:30 • 14:30 • 15:30 • 16:30 • 17:30")
+    lines.append("⌨️ <code>/taipo</code> | <code>/taipo pro</code> | <code>/taipo top</code> | <code>/taipo news</code> | <code>/ping</code> | <code>/id</code>")
     return "\n".join(lines)
+
 
 def build_track_message(state):
     watch = state.get("watch", {})
     symbols = watch.get("symbols", [])
     baseline = watch.get("baseline", {})
     picked_at = watch.get("picked_at", "")
+    band_used = watch.get("band_used", "")
 
     lines = []
-    lines.append("📌 <b>TAKİP</b> – TAIPO BIST")
-    lines.append(f"🕒 {now_str_tr()}")
+    lines.append("✅ <b>Saatlik Takip</b> – TAIPO BIST v3 PRO+ (aynı 3 hisse)")
+    lines.append("")
+    lines.append("┌──────────────────────────────")
+    lines.append("│ 🕒 <b>TAKİP ÇİZELGESİ</b>")
+    lines.append(f"│ {now_str_tr()}")
+    lines.append("└──────────────────────────────")
+    lines.append("")
     if picked_at:
-        lines.append(f"🎯 Kırılım zamanı: {picked_at}")
+        lines.append(f"🎯 Seçim Zamanı: {picked_at}")
+    if band_used:
+        lines.append(f"🎚️ Band: {band_used}")
     lines.append("")
 
     if not symbols:
-        lines.append("⚠️ Bugün için takip listesi yok. (10:06–10:11 / 10:30–10:35)")
+        lines.append("⚠️ Bugün için takip listesi yok. (10:00–10:10 arası oluşur)")
         lines.append("⌨️ <code>/taipo</code>")
         return "\n".join(lines)
 
-    lines.append("✅ <b>Takipteki hisseler</b>")
     for sym in symbols:
         q = fetch_quote(sym)
         if not q:
-            lines.append(f"• <code>{clean_sym(sym)}</code> → veri yok")
+            lines.append(f"<code>{clean_sym(sym)}</code> → veri yok")
             continue
 
         base = baseline.get(sym)
@@ -704,25 +712,27 @@ def build_track_message(state):
 
         pct_from_base = ((float(q["price"]) - float(base)) / float(base)) * 100.0
         lines.append(
-            f"• <code>{clean_sym(sym)}</code>  {float(base):.2f} → {q['price']:.2f}  {trend_emoji(pct_from_base)} {pct_str(pct_from_base)}"
+            f"<code>{clean_sym(sym)}</code>  {float(base):.2f} → {q['price']:.2f}   {trend_emoji(pct_from_base)}  {pct_str(pct_from_base)}"
         )
 
     lines.append("")
     lines.append("⌨️ <code>/taipo</code>")
     return "\n".join(lines)
 
+
 def build_help_message():
     return (
         "🧭 <b>TAIPO Komutlar</b>\n\n"
-        "• <code>/taipo</code> → özet (kırılım listesi varsa + ilk 5 artı/eksi + haber)\n"
-        "• <code>/taipo top</code> → sadece ilk 5 artı/eksi\n"
-        "• <code>/taipo news</code> → sadece haber\n"
+        "• <code>/taipo</code> → PRO özet (breadth + +5/-5 + haber)\n"
+        "• <code>/taipo pro</code> → PRO detay (watchlist + movers + haber)\n"
+        "• <code>/taipo top</code> → sadece movers (+5/-5)\n"
+        "• <code>/taipo news</code> → sadece haber radar\n"
         "• <code>/ping</code> → canlı test\n"
         "• <code>/id</code> → chat id\n"
     )
 
 # =========================
-# MOVERS cache
+# PRO: Movers cache + Alerts + EOD
 # =========================
 def get_movers_cached(state, symbols):
     now_ts = int(time.time())
@@ -734,78 +744,50 @@ def get_movers_cached(state, symbols):
     state["movers_cache"] = {"ts": now_ts, "data": movers}
     return state, movers, False
 
-# =========================
-# PICK LOGIC (2 windows)
-# =========================
-def try_pick_window(state, symbols):
-    w = state.get("watch", {})
-    win = pick_window_id_now()
-    if win is None:
-        return state, None, None, None
 
-    # market time güvenliği
-    if not is_market_time_now():
-        return state, None, None, None
+def maybe_send_alerts(state, movers, chat_id):
+    """Alarm: abs(change_pct) >= threshold ise spam yapmadan gönder."""
+    if not movers:
+        return state
 
-    # pencere bazlı done kontrolü
-    if win == 1 and w.get("pick1_done"):
-        return state, None, None, None
-    if win == 2 and w.get("pick2_done"):
-        return state, None, None, None
+    now_ts = int(time.time())
+    alerts = state.get("alerts", {}) or {}
 
-    existing = w.get("symbols", []) or []
-    if len(existing) >= MAX_WATCH_TOTAL:
-        if win == 1:
-            state["watch"]["pick1_done"] = True
-        else:
-            state["watch"]["pick2_done"] = True
-        return state, None, None, None
-
-    quotes = scan_quotes_bulk_intraday(symbols)
-    if not quotes:
-        return state, None, None, None
-
-    picks, band = pick_breakouts_with_auto_band(quotes, n=PICK_COUNT)
-    if len(picks) < PICK_COUNT:
-        # pencere bitene kadar tekrar denenecek (cron/loop ile)
-        return state, None, None, None
-
-    new_syms = []
-    new_base = {}
-    new_picks = []
-
-    for q in picks:
-        if q["symbol"] in existing:
+    fired = []
+    for m in movers:
+        sym = m.get("symbol")
+        if not sym:
             continue
-        new_syms.append(q["symbol"])
-        new_base[q["symbol"]] = q["price"]
-        new_picks.append(q)
+        cp = float(m.get("change_pct", 0.0) or 0.0)
+        if abs(cp) < ALERT_ABS_PCT:
+            continue
 
-    if not new_syms:
-        # yeni yakalayamadı
-        if win == 1:
-            state["watch"]["pick1_done"] = True
-        else:
-            state["watch"]["pick2_done"] = True
-        return state, None, None, None
+        last_ts = int(alerts.get(sym, 0) or 0)
+        if now_ts - last_ts < ALERT_COOLDOWN_SEC:
+            continue
 
-    state["watch"]["symbols"] = (existing + new_syms)[:MAX_WATCH_TOTAL]
-    state["watch"]["baseline"].update(new_base)
-    state["watch"]["picked_at"] = now_str_tr()
-    state["watch"]["band_used"] = f"{band[0]:.2f}%–{band[1]:.2f}%"
+        fired.append(m)
+        alerts[sym] = now_ts
 
-    # bu pencerede 1 kere mesaj atıp kapatalım
-    if win == 1:
-        state["watch"]["pick1_done"] = True
-    else:
-        state["watch"]["pick2_done"] = True
+    if fired:
+        fired_sorted = sorted(fired, key=lambda x: abs(float(x.get("change_pct", 0))), reverse=True)[:5]
+        lines = []
+        lines.append("🚨 <b>HAREKET ALARMI</b> (TAIPO)")
+        lines.append(f"🕒 {now_str_tr()}")
+        lines.append("")
+        for m in fired_sorted:
+            sym = clean_sym(m["symbol"])
+            lines.append(
+                f"• <code>{sym}</code>  {m['price']:.2f}  {trend_emoji(m['change_pct'])} {pct_str(m['change_pct'])}  | Skor {score_str(m['score'])}"
+            )
+        send_message("\n".join(lines), chat_id=chat_id)
 
-    return state, new_picks, band, win
+    state["alerts"] = alerts
+    return state
 
-# =========================
-# EOD REPORT (table-like)
-# =========================
+
 def maybe_send_eod_report(state, chat_id):
+    """Gün sonu raporu: 17:35 TR (hafta içi) bir kere."""
     if not is_eod_time_now():
         return state
     if state.get("eod_sent_day") == today_str_tr():
@@ -817,41 +799,66 @@ def maybe_send_eod_report(state, chat_id):
     picked_at = watch.get("picked_at", "")
 
     lines = []
-    lines.append("🏁 <b>KAPANIŞ RAPORU</b> – TAIPO BIST")
+    lines.append("🏁 <b>GÜN SONU RAPORU</b> – TAIPO BIST")
     lines.append(f"🕒 {now_str_tr()}")
     if picked_at:
-        lines.append(f"🎯 Kırılım zamanı: {picked_at}")
+        lines.append(f"🎯 Seçim: {picked_at}")
     lines.append("")
 
     if not symbols:
-        lines.append("⚠️ Bugün takip listesi oluşmadı.")
+        lines.append("⚠️ Bugün watchlist oluşmadı.")
         send_message("\n".join(lines), chat_id=chat_id)
         state["eod_sent_day"] = today_str_tr()
         return state
-
-    lines.append("<b>Hisse</b> | <b>Başlangıç</b> → <b>Son</b> | <b>Durum</b>")
-    lines.append("────────────────────────────")
 
     hits = 0
     for sym in symbols:
         q = fetch_quote(sym)
         if not q:
-            lines.append(f"<code>{clean_sym(sym)}</code> | ? → ? | veri yok")
+            lines.append(f"• <code>{clean_sym(sym)}</code> → veri yok")
             continue
         base = float(baseline.get(sym, q["prev_close"]) or q["prev_close"])
         pct_from_base = ((float(q["price"]) - base) / base) * 100.0
         if pct_from_base >= 0:
             hits += 1
         lines.append(
-            f"<code>{clean_sym(sym)}</code> | {base:.2f} → {q['price']:.2f} | {trend_emoji(pct_from_base)} {pct_str(pct_from_base)}"
+            f"• <code>{clean_sym(sym)}</code>  {base:.2f} → {q['price']:.2f}  {trend_emoji(pct_from_base)} {pct_str(pct_from_base)}"
         )
 
     lines.append("")
-    lines.append(f"✅ <b>Gün özeti:</b> {hits}/{len(symbols)} artıda")
-
+    lines.append(f"✅ Gün sonu durum: <b>{hits}/{len(symbols)}</b> artıda")
     send_message("\n".join(lines), chat_id=chat_id)
+
     state["eod_sent_day"] = today_str_tr()
     return state
+
+# =========================
+# CORE LOGIC
+# =========================
+def try_pick_once(state, symbols):
+    if state.get("sent_pick_message"):
+        return state, None, None
+    if not in_pick_window():
+        return state, None, None
+
+    quotes = scan_quotes_bulk_intraday(symbols)
+    if not quotes:
+        return state, None, None
+
+    picks, band = pick_breakouts_with_auto_band(quotes, n=PICK_COUNT)
+    if not band or len(picks) < PICK_COUNT:
+        return state, None, None
+
+    watch_syms = [q["symbol"] for q in picks]
+    baseline = {q["symbol"]: q["price"] for q in picks}
+
+    state["watch"]["symbols"] = watch_syms
+    state["watch"]["baseline"] = baseline
+    state["watch"]["picked_at"] = now_str_tr()
+    state["watch"]["band_used"] = f"{band[0]:.2f}%–{band[1]:.2f}%"
+    state["sent_pick_message"] = True
+
+    return state, picks, band
 
 # =========================
 # MODES
@@ -862,40 +869,40 @@ def run_auto(state):
         send_message(f"⚠️ <b>bist100.txt</b> bulunamadı veya boş.\n🕒 {now_str_tr()}")
         return state
 
-    # market saatleri dışında otomatik spam yapma
-    if not is_market_time_now():
-        return state
-
-    # movers cache
+    # Movers cache + alerts
     state, movers, _ = get_movers_cached(state, symbols)
+    state = maybe_send_alerts(state, movers, TARGET_CHAT_ID)
 
-    # 1) Pick windows
-    state, picks, band, win = try_pick_window(state, symbols)
+    # pick once
+    state, picks, band = try_pick_once(state, symbols)
     if picks:
-        text = build_breakout_message(picks, state["watch"]["picked_at"], band, win)
+        text = build_pick_message(picks, state["watch"]["picked_at"], band)
         text += "\n\n" + build_movers_block(movers, MOVERS_TOP_N)
         state, text = append_news_to_text(state, text)
         send_message(text)
         return state
 
-    # 2) Track messages at schedule
-    if is_track_time_now() and should_send_track_now(state):
-        text = build_track_message(state)
-        text += "\n\n" + build_movers_block(movers, MOVERS_TOP_N)
-        state, text = append_news_to_text(state, text)
-        send_message(text)
-        state["last_track_sent_key"] = now_key_minute()
+    # track time
+    if is_track_time_now():
+        if state.get("watch", {}).get("symbols"):
+            if should_send_track_now(state):
+                text = build_track_message(state)
+                text += "\n\n" + build_movers_block(movers, MOVERS_TOP_N)
+                state, text = append_news_to_text(state, text)
+                send_message(text)
+                state["last_track_sent_key"] = now_key_minute()
 
-    # 3) EOD report
+    # EOD report
     state = maybe_send_eod_report(state, TARGET_CHAT_ID)
     return state
+
 
 def run_command_listener(state):
     last_update_id = int(state.get("last_update_id", 0))
     updates = get_updates(last_update_id + 1)
     max_uid = last_update_id
 
-    symbols = None
+    symbols = None  # lazy load
 
     for upd in updates:
         uid = int(upd.get("update_id", 0))
@@ -918,6 +925,7 @@ def run_command_listener(state):
         low = text.lower().strip()
         cid = msg_chat_id(msg)
 
+        # /ping
         if low.startswith("/ping"):
             title = msg_chat_title(msg)
             reply = f"🏓 <b>PONG</b>\n🕒 {now_str_tr()}"
@@ -926,10 +934,12 @@ def run_command_listener(state):
             send_message(reply, chat_id=cid)
             continue
 
+        # /help
         if low.startswith("/help") or low.startswith("/taipohelp") or low.startswith("/taipo help"):
             send_message(build_help_message(), chat_id=cid)
             continue
 
+        # /id
         if low.startswith("/id"):
             now_ts = int(time.time())
             last_ts = int(state.get("last_id_reply_ts", 0))
@@ -942,6 +952,7 @@ def run_command_listener(state):
                 state["last_id_reply_ts"] = now_ts
             continue
 
+        # /taipo*
         if low.startswith("/taipo"):
             now_ts = int(time.time())
             last_ts = int(state.get("last_command_reply_ts", 0))
@@ -954,16 +965,16 @@ def run_command_listener(state):
             parts = low.split()
             mode = "default"
             if len(parts) >= 2:
-                mode = parts[1].replace("@taipo_bist_radar_bot", "").strip()
+                mode = parts[1].strip()
 
             movers = []
             if symbols:
                 state, movers, _ = get_movers_cached(state, symbols)
 
-            header = f"🛰️ <b>TAIPO BIST</b>\n🕒 {now_str_tr()}"
+            header = f"🛰️ <b>TAIPO • BIST RADAR</b>\n🕒 {now_str_tr()}\n"
 
             if mode in ("news",):
-                base = header + "\n\n📰 <b>Haber Modu</b>"
+                base = header + "\n📰 <b>Haber Modu</b>"
                 state, base = append_news_to_text(state, base)
                 send_message(base, chat_id=cid)
 
@@ -971,16 +982,31 @@ def run_command_listener(state):
                 base = header + "\n\n" + build_movers_block(movers, MOVERS_TOP_N)
                 send_message(base, chat_id=cid)
 
-            else:
+            elif mode in ("pro",):
                 blocks = [header]
-
                 if state.get("watch", {}).get("symbols"):
                     blocks.append(build_track_message(state))
                 else:
-                    blocks.append("⚠️ Bugün takip listesi henüz oluşmadı.\n⏰ Kırılım pencereleri: 10:06–10:11 ve 10:30–10:35")
-
+                    blocks.append(
+                        "⚠️ Bugün liste henüz oluşmadı.\n"
+                        "⏰ Seçim aralığı: 10:00–10:10 (hafta içi)\n"
+                        "🎯 Band hedef: 0.40% – 0.90% (auto genişler)\n"
+                        "🕒 Takip: 11:30–17:30 saat başı\n"
+                    )
                 blocks.append(build_movers_block(movers, MOVERS_TOP_N))
+                blocks.append("⌨️ <code>/taipo top</code> | <code>/taipo news</code> | <code>/taipo</code>")
+                text_out = "\n\n".join(blocks)
+                state, text_out = append_news_to_text(state, text_out)
+                send_message(text_out, chat_id=cid)
 
+            else:
+                blocks = [header]
+                if state.get("watch", {}).get("symbols"):
+                    blocks.append("✅ <b>Watchlist</b>: bugün seçilen 3 hisse mevcut. (Detay için: <code>/taipo pro</code>)")
+                else:
+                    blocks.append("⚠️ Bugün liste henüz oluşmadı. (10:00–10:10 arası oluşur)")
+                blocks.append(build_movers_block(movers, MOVERS_TOP_N))
+                blocks.append("⌨️ <code>/taipo pro</code> | <code>/taipo top</code> | <code>/taipo news</code> | <code>/taipo help</code>")
                 text_out = "\n\n".join(blocks)
                 state, text_out = append_news_to_text(state, text_out)
                 send_message(text_out, chat_id=cid)
@@ -1001,6 +1027,7 @@ def _git_has_changes(path: str) -> bool:
     except Exception:
         return False
 
+
 def persist_state_if_enabled():
     if not PERSIST_STATE:
         return
@@ -1012,19 +1039,21 @@ def persist_state_if_enabled():
     try:
         subprocess.run(["git", "config", "user.email", "actions@github.com"], check=False)
         subprocess.run(["git", "config", "user.name", "github-actions"], check=False)
-
         subprocess.run(["git", "add", STATE_FILE], check=False)
         subprocess.run(["git", "commit", "-m", "chore: update state"], check=False)
         subprocess.run(["git", "push"], check=False)
     except Exception:
         pass
 
+# =========================
+# MAIN
+# =========================
 def main():
     ensure_files()
     state = load_json(STATE_FILE, {})
     state = ensure_today_state(state)
 
-    # command listener (AUTO'da da çalışır)
+    # listen commands always
     state = run_command_listener(state)
 
     if MODE == "COMMAND":
@@ -1036,6 +1065,6 @@ def main():
     save_json(STATE_FILE, state)
     persist_state_if_enabled()
 
+
 if __name__ == "__main__":
     main()
-```0
