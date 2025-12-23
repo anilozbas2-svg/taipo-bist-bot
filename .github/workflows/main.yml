@@ -3,7 +3,9 @@ name: TAIPO BIST - AUTO
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/2 * * * 1-5"   # hafta içi 2 dakikada bir
+    # UTC: 07:00-15:10 => TR: 10:00-18:10
+    - cron: "*/1 7-14 * * 1-5"
+    - cron: "0-10/1 15 * * 1-5"
 
 concurrency:
   group: taipo-bist-auto
@@ -13,7 +15,6 @@ jobs:
   run-auto:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
