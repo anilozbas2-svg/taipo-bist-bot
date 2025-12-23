@@ -1,15 +1,11 @@
-name: TAIPO BIST - AUTO
+name: TAIPO BIST - AUTO (MANUAL TEST)
 
 on:
   workflow_dispatch:
-  schedule:
-    # UTC 07:00–15:10 = TR 10:00–18:10
-    - cron: "*/1 7-14 * * 1-5"
-    - cron: "0-10/1 15 * * 1-5"
 
 concurrency:
   group: taipo-bist-auto
-  cancel-in-progress: false   # <-- ÖNEMLİ
+  cancel-in-progress: true
 
 jobs:
   run-auto:
@@ -31,7 +27,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run AUTO
+      - name: Run AUTO (manual test)
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
