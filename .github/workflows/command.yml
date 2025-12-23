@@ -13,7 +13,8 @@ concurrency:
 jobs:
   run-command:
     runs-on: ubuntu-latest
-    timeout-minutes: 380  # ~6 saat 20 dk
+    timeout-minutes: 540   # 9 saat (güvenli)
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,10 +37,7 @@ jobs:
           MODE: COMMAND
           COMMAND_MAX_AGE_SEC: "900"
         run: |
-          # TR 09:55 -> 18:10 arası ~ 8 saat 15 dk değil,
-          # GitHub job limit/performans için 6+ saat yeterli.
-          # 6 saat 10 dk loop:
-          for i in $(seq 1 880); do
+          for i in $(seq 1 1200); do
             python main.py
             sleep 25
           done
