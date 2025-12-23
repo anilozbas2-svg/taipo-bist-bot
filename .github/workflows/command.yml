@@ -13,7 +13,7 @@ concurrency:
 jobs:
   run-command:
     runs-on: ubuntu-latest
-    timeout-minutes: 540   # 9 saat (güvenli)
+    timeout-minutes: 540  # 9 saat güvenli
 
     steps:
       - name: Checkout
