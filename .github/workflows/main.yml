@@ -3,19 +3,33 @@ name: TAIPO BIST - AUTO (SCHEDULE)
 on:
   workflow_dispatch:
   schedule:
-    # TR 10:00 = UTC 07:00  (Pencere 1)
+    # =========================
+    # P1: 10:00–10:10 TR  => 07:00–07:10 UTC
+    # GitHub gecikme ihtimaline karşı 07:00 ve 07:05 çalıştırıyoruz
+    # =========================
     - cron: "0 7 * * 1-5"
     - cron: "5 7 * * 1-5"
 
-    # TR 10:30 = UTC 07:30  (Pencere 2)
+    # =========================
+    # P2: 10:30–10:40 TR  => 07:30–07:40 UTC
+    # 07:30 ve 07:35 çalıştırıyoruz
+    # =========================
     - cron: "30 7 * * 1-5"
     - cron: "35 7 * * 1-5"
 
-    # Saat başı rapor (TR 11:00–17:00) = UTC 08:00–14:00
+    # =========================
+    # Saatlik takip: 11:00–17:00 TR => 08:00–14:00 UTC
+    # Her saat başı +5 dk (yakalama toleransı)
+    # =========================
     - cron: "0 8-14 * * 1-5"
+    - cron: "5 8-14 * * 1-5"
 
-    # Gün sonu raporu TR 17:35 = UTC 14:35
+    # =========================
+    # Gün sonu: 17:35 TR => 14:35 UTC
+    # 14:35 ve 14:38 çalıştırıyoruz
+    # =========================
     - cron: "35 14 * * 1-5"
+    - cron: "38 14 * * 1-5"
 
 concurrency:
   group: taipo-bist-auto
