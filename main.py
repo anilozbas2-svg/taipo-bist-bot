@@ -14,11 +14,18 @@ import pandas as pd
 
 # =========================================================
 # TAIPO-BIST v3 PRO+ (Plan A Ready)
-# - /taipo PRO: breadth + top gainers/losers + radar score + news
-# - Modes: /taipo, /taipo pro, /taipo top, /taipo news, /taipo help
-# - Alerts: abs move >= threshold (daily once)
-# - EOD report: 17:35 TR
-# - Cache: movers cached for 2 minutes (fast response)
+# AUTO:
+#   - 10:00 Açılış Raporu (push)
+#   - 10:10 Erken Kırılım (push)
+#   - 11:00-17:00 Saat Başı Takip (push)
+#   - 17:30 Kapanış Hazırlık (push)
+#   - 18:10 Gün Sonu Raporu (push)
+#
+# COMMAND:
+#   - /taipo, /taipo pro, /taipo top, /taipo news, /taipo help, /ping, /id
+#
+# Not:
+# - AUTO modunda "HAREKET ALARMI" (alert spam) KAPALI.
 # =========================================================
 
 # =========================
@@ -43,9 +50,6 @@ PERSIST_STATE = os.getenv("PERSIST_STATE", "0").strip() == "1"
 # =========================
 # PICK SETTINGS
 # =========================
-PICK_START_HOUR = 10
-PICK_START_MIN = 0
-PICK_END_MIN = 10
 PICK_COUNT = 3
 
 AUTO_BAND_STEPS = [
@@ -59,10 +63,10 @@ AUTO_BAND_STEPS = [
 ]
 
 # =========================
-# TRACK SETTINGS
+# TRACK SETTINGS (ISTEDIGIN GIBI SAAT BASI)
 # =========================
 TRACK_HOURS_TR = {11, 12, 13, 14, 15, 16, 17}
-TRACK_MINUTE_TR = 30
+TRACK_MINUTE_TR = 0  # <-- SAAT BASI
 
 # =========================
 # COMMAND / ANTI-SPAM
@@ -78,15 +82,10 @@ NEWS_MAX_ITEMS = 3
 NEWS_STATE_KEY = "news_seen"  # title->ts
 
 # =========================
-# PRO: Movers / Alerts / Cache / EOD
+# PRO: Movers / Cache
 # =========================
 MOVERS_TOP_N = 5
 MOVERS_CACHE_SEC = 120  # 2 min cache
-ALERT_ABS_PCT = float(os.getenv("ALERT_ABS_PCT", "2.00"))
-ALERT_COOLDOWN_SEC = 6 * 60 * 60  # 6 saat
-
-EOD_REPORT_HOUR = 17
-EOD_REPORT_MIN = 35
 
 # =========================
 # IO HELPERS
@@ -120,8 +119,8 @@ def ensure_files():
                 "last_track_sent_key": "",
                 NEWS_STATE_KEY: {},
                 "movers_cache": {"ts": 0, "data": None},
-                "alerts": {},
                 "eod_sent_day": "",
+                "last_auto_sent": {},  # key -> {"ts":..., "hash":...}
             },
         )
 
@@ -155,6 +154,11 @@ def _escape_html(s: str) -> str:
     return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def _hash_text(s: str) -> str:
+    # basit, hızlı dedupe
+    return str(abs(hash(s)))
+
+
 def send_message(text: str, chat_id: str = None) -> bool:
     if not chat_id:
         chat_id = TARGET_CHAT_ID
@@ -171,6 +175,34 @@ def send_message(text: str, chat_id: str = None) -> bool:
         return r.status_code == 200
     except Exception:
         return False
+
+
+def send_auto_deduped(state, key: str, text: str, chat_id: str = None, cooldown_sec: int = 180) -> dict:
+    """
+    AUTO mesajlarında aynı içeriği tekrar tekrar basmayı engeller.
+    key: 'open'|'pick'|'track'|'preclose'|'close' gibi
+    """
+    if not chat_id:
+        chat_id = TARGET_CHAT_ID
+
+    if "last_auto_sent" not in state:
+        state["last_auto_sent"] = {}
+
+    now_ts = int(time.time())
+    h = _hash_text(text)
+    prev = state["last_auto_sent"].get(key, {}) or {}
+
+    prev_ts = int(prev.get("ts", 0) or 0)
+    prev_h = prev.get("hash", "")
+
+    # aynı içerik + cooldown içinde ise basma
+    if prev_h == h and (now_ts - prev_ts) < cooldown_sec:
+        return state
+
+    ok = send_message(text, chat_id=chat_id)
+    if ok:
+        state["last_auto_sent"][key] = {"ts": now_ts, "hash": h}
+    return state
 
 
 def get_updates(offset: int):
@@ -238,10 +270,10 @@ def ensure_today_state(state):
         state[NEWS_STATE_KEY] = {}
     if "movers_cache" not in state:
         state["movers_cache"] = {"ts": 0, "data": None}
-    if "alerts" not in state:
-        state["alerts"] = {}
     if "eod_sent_day" not in state:
         state["eod_sent_day"] = ""
+    if "last_auto_sent" not in state:
+        state["last_auto_sent"] = {}
 
     if state.get("day") != today_str_tr():
         state["day"] = today_str_tr()
@@ -249,18 +281,25 @@ def ensure_today_state(state):
         state["sent_pick_message"] = False
         state["last_track_sent_key"] = ""
         state["movers_cache"] = {"ts": 0, "data": None}
-        state["alerts"] = {}
         state["eod_sent_day"] = ""
+        state["last_auto_sent"] = {}
     return state
 
 
-def in_pick_window():
+def is_open_report_time_now():
+    # 10:00 TR
     if not is_weekday_tr():
         return False
     n = datetime.now(TZ)
-    if n.hour != PICK_START_HOUR:
+    return n.hour == 10 and n.minute == 0
+
+
+def is_pick_trigger_time_now():
+    # 10:10 TR (10:00–10:10 aralığının SONU -> erken kırılım seçimi burada)
+    if not is_weekday_tr():
         return False
-    return PICK_START_MIN <= n.minute <= PICK_END_MIN
+    n = datetime.now(TZ)
+    return n.hour == 10 and n.minute == 10
 
 
 def is_track_time_now():
@@ -275,11 +314,20 @@ def should_send_track_now(state):
     return state.get("last_track_sent_key", "") != key
 
 
-def is_eod_time_now():
+def is_preclose_time_now():
+    # 17:30 TR
     if not is_weekday_tr():
         return False
     n = datetime.now(TZ)
-    return (n.hour == EOD_REPORT_HOUR) and (n.minute == EOD_REPORT_MIN)
+    return n.hour == 17 and n.minute == 30
+
+
+def is_close_report_time_now():
+    # 18:10 TR
+    if not is_weekday_tr():
+        return False
+    n = datetime.now(TZ)
+    return n.hour == 18 and n.minute == 10
 
 # =========================
 # DATA
@@ -650,6 +698,16 @@ def build_movers_block(movers, top_n=5):
     return "\n".join(lines)
 
 
+def build_open_message():
+    lines = []
+    lines.append("🟦 <b>AÇILIŞ RAPORU</b> – TAIPO BIST v3 PRO+")
+    lines.append(f"🕒 {now_str_tr()}")
+    lines.append("")
+    lines.append("ℹ️ Erken kırılım listesi 10:00–10:10 arasında oluşur, <b>10:10'da</b> otomatik paylaşılır.")
+    lines.append("⌨️ <code>/taipo</code> | <code>/taipo pro</code> | <code>/taipo top</code> | <code>/taipo news</code> | <code>/ping</code> | <code>/id</code>")
+    return "\n".join(lines)
+
+
 def build_pick_message(picks, picked_at, band_used):
     lo, hi = band_used
     lines = []
@@ -669,12 +727,12 @@ def build_pick_message(picks, picked_at, band_used):
         vr_txt = f" • hacim x{vr:.2f}" if isinstance(vr, (int, float)) else ""
         lines.append(f"• <code>{sym}</code>  {q['price']:.2f}   {trend_emoji(q['change_pct'])}  {pct_str(q['change_pct'])}{vr_txt}")
     lines.append("")
-    lines.append("🕒 Takip: 11:30 • 12:30 • 13:30 • 14:30 • 15:30 • 16:30 • 17:30")
+    lines.append("🕒 Takip: 11:00 • 12:00 • 13:00 • 14:00 • 15:00 • 16:00 • 17:00")
     lines.append("⌨️ <code>/taipo</code> | <code>/taipo pro</code> | <code>/taipo top</code> | <code>/taipo news</code> | <code>/ping</code> | <code>/id</code>")
     return "\n".join(lines)
 
 
-def build_track_message(state):
+def build_track_message(state, title="✅ <b>Saatlik Takip</b>"):
     watch = state.get("watch", {})
     symbols = watch.get("symbols", [])
     baseline = watch.get("baseline", {})
@@ -682,10 +740,10 @@ def build_track_message(state):
     band_used = watch.get("band_used", "")
 
     lines = []
-    lines.append("✅ <b>Saatlik Takip</b> – TAIPO BIST v3 PRO+ (aynı 3 hisse)")
+    lines.append(f"{title} – TAIPO BIST v3 PRO+ (aynı 3 hisse)")
     lines.append("")
     lines.append("┌──────────────────────────────")
-    lines.append("│ 🕒 <b>TAKİP ÇİZELGESİ</b>")
+    lines.append("│ 🕒 <b>TAKİP</b>")
     lines.append(f"│ {now_str_tr()}")
     lines.append("└──────────────────────────────")
     lines.append("")
@@ -696,7 +754,7 @@ def build_track_message(state):
     lines.append("")
 
     if not symbols:
-        lines.append("⚠️ Bugün için takip listesi yok. (10:00–10:10 arası oluşur)")
+        lines.append("⚠️ Bugün için takip listesi yok. (10:10'da oluşur)")
         lines.append("⌨️ <code>/taipo</code>")
         return "\n".join(lines)
 
@@ -732,7 +790,7 @@ def build_help_message():
     )
 
 # =========================
-# PRO: Movers cache + Alerts + EOD
+# PRO: Movers cache
 # =========================
 def get_movers_cached(state, symbols):
     now_ts = int(time.time())
@@ -744,101 +802,14 @@ def get_movers_cached(state, symbols):
     state["movers_cache"] = {"ts": now_ts, "data": movers}
     return state, movers, False
 
-
-def maybe_send_alerts(state, movers, chat_id):
-    """Alarm: abs(change_pct) >= threshold ise spam yapmadan gönder."""
-    if not movers:
-        return state
-
-    now_ts = int(time.time())
-    alerts = state.get("alerts", {}) or {}
-
-    fired = []
-    for m in movers:
-        sym = m.get("symbol")
-        if not sym:
-            continue
-        cp = float(m.get("change_pct", 0.0) or 0.0)
-        if abs(cp) < ALERT_ABS_PCT:
-            continue
-
-        last_ts = int(alerts.get(sym, 0) or 0)
-        if now_ts - last_ts < ALERT_COOLDOWN_SEC:
-            continue
-
-        fired.append(m)
-        alerts[sym] = now_ts
-
-    if fired:
-        fired_sorted = sorted(fired, key=lambda x: abs(float(x.get("change_pct", 0))), reverse=True)[:5]
-        lines = []
-        lines.append("🚨 <b>HAREKET ALARMI</b> (TAIPO)")
-        lines.append(f"🕒 {now_str_tr()}")
-        lines.append("")
-        for m in fired_sorted:
-            sym = clean_sym(m["symbol"])
-            lines.append(
-                f"• <code>{sym}</code>  {m['price']:.2f}  {trend_emoji(m['change_pct'])} {pct_str(m['change_pct'])}  | Skor {score_str(m['score'])}"
-            )
-        send_message("\n".join(lines), chat_id=chat_id)
-
-    state["alerts"] = alerts
-    return state
-
-
-def maybe_send_eod_report(state, chat_id):
-    """Gün sonu raporu: 17:35 TR (hafta içi) bir kere."""
-    if not is_eod_time_now():
-        return state
-    if state.get("eod_sent_day") == today_str_tr():
-        return state
-
-    watch = state.get("watch", {})
-    symbols = watch.get("symbols", [])
-    baseline = watch.get("baseline", {})
-    picked_at = watch.get("picked_at", "")
-
-    lines = []
-    lines.append("🏁 <b>GÜN SONU RAPORU</b> – TAIPO BIST")
-    lines.append(f"🕒 {now_str_tr()}")
-    if picked_at:
-        lines.append(f"🎯 Seçim: {picked_at}")
-    lines.append("")
-
-    if not symbols:
-        lines.append("⚠️ Bugün watchlist oluşmadı.")
-        send_message("\n".join(lines), chat_id=chat_id)
-        state["eod_sent_day"] = today_str_tr()
-        return state
-
-    hits = 0
-    for sym in symbols:
-        q = fetch_quote(sym)
-        if not q:
-            lines.append(f"• <code>{clean_sym(sym)}</code> → veri yok")
-            continue
-        base = float(baseline.get(sym, q["prev_close"]) or q["prev_close"])
-        pct_from_base = ((float(q["price"]) - base) / base) * 100.0
-        if pct_from_base >= 0:
-            hits += 1
-        lines.append(
-            f"• <code>{clean_sym(sym)}</code>  {base:.2f} → {q['price']:.2f}  {trend_emoji(pct_from_base)} {pct_str(pct_from_base)}"
-        )
-
-    lines.append("")
-    lines.append(f"✅ Gün sonu durum: <b>{hits}/{len(symbols)}</b> artıda")
-    send_message("\n".join(lines), chat_id=chat_id)
-
-    state["eod_sent_day"] = today_str_tr()
-    return state
-
 # =========================
 # CORE LOGIC
 # =========================
 def try_pick_once(state, symbols):
+    # sadece 10:10 TR tetiklenince seç
     if state.get("sent_pick_message"):
         return state, None, None
-    if not in_pick_window():
+    if not is_pick_trigger_time_now():
         return state, None, None
 
     quotes = scan_quotes_bulk_intraday(symbols)
@@ -866,34 +837,94 @@ def try_pick_once(state, symbols):
 def run_auto(state):
     symbols = load_symbols()
     if not symbols:
-        send_message(f"⚠️ <b>bist100.txt</b> bulunamadı veya boş.\n🕒 {now_str_tr()}")
+        text = f"⚠️ <b>bist100.txt</b> bulunamadı veya boş.\n🕒 {now_str_tr()}"
+        state = send_auto_deduped(state, "err", text, cooldown_sec=300)
         return state
 
-    # Movers cache + alerts
+    # movers (her AUTO tetikte çekilir, cache var)
     state, movers, _ = get_movers_cached(state, symbols)
-    state = maybe_send_alerts(state, movers, TARGET_CHAT_ID)
 
-    # pick once
+    # 10:00 açılış
+    if is_open_report_time_now():
+        text = build_open_message() + "\n\n" + build_movers_block(movers, MOVERS_TOP_N)
+        state, text = append_news_to_text(state, text)
+        state = send_auto_deduped(state, "open", text, cooldown_sec=1800)
+        return state
+
+    # 10:10 pick
     state, picks, band = try_pick_once(state, symbols)
     if picks:
         text = build_pick_message(picks, state["watch"]["picked_at"], band)
         text += "\n\n" + build_movers_block(movers, MOVERS_TOP_N)
         state, text = append_news_to_text(state, text)
-        send_message(text)
+        state = send_auto_deduped(state, "pick", text, cooldown_sec=1800)
         return state
 
-    # track time
+    # saat başı takip (11-17)
     if is_track_time_now():
         if state.get("watch", {}).get("symbols"):
             if should_send_track_now(state):
-                text = build_track_message(state)
+                text = build_track_message(state, title="✅ <b>Saatlik Takip (Saat Başı)</b>")
                 text += "\n\n" + build_movers_block(movers, MOVERS_TOP_N)
                 state, text = append_news_to_text(state, text)
-                send_message(text)
+                state = send_auto_deduped(state, "track", text, cooldown_sec=1500)
                 state["last_track_sent_key"] = now_key_minute()
+        else:
+            # liste yoksa saat başı spam atma, sadece sessiz geç
+            pass
+        return state
 
-    # EOD report
-    state = maybe_send_eod_report(state, TARGET_CHAT_ID)
+    # 17:30 kapanış hazırlık
+    if is_preclose_time_now():
+        text = build_track_message(state, title="🟨 <b>Kapanış Hazırlık Raporu</b>")
+        text += "\n\n" + build_movers_block(movers, MOVERS_TOP_N)
+        state, text = append_news_to_text(state, text)
+        state = send_auto_deduped(state, "preclose", text, cooldown_sec=1800)
+        return state
+
+    # 18:10 gün sonu
+    if is_close_report_time_now():
+        if state.get("eod_sent_day") == today_str_tr():
+            return state
+
+        watch = state.get("watch", {})
+        symbols_w = watch.get("symbols", [])
+        baseline = watch.get("baseline", {})
+        picked_at = watch.get("picked_at", "")
+
+        lines = []
+        lines.append("🏁 <b>GÜN SONU RAPORU</b> – TAIPO BIST")
+        lines.append(f"🕒 {now_str_tr()}")
+        if picked_at:
+            lines.append(f"🎯 Seçim: {picked_at}")
+        lines.append("")
+
+        if not symbols_w:
+            lines.append("⚠️ Bugün watchlist oluşmadı.")
+        else:
+            hits = 0
+            for sym in symbols_w:
+                q = fetch_quote(sym)
+                if not q:
+                    lines.append(f"• <code>{clean_sym(sym)}</code> → veri yok")
+                    continue
+                base = float(baseline.get(sym, q["prev_close"]) or q["prev_close"])
+                pct_from_base = ((float(q["price"]) - base) / base) * 100.0
+                if pct_from_base >= 0:
+                    hits += 1
+                lines.append(
+                    f"• <code>{clean_sym(sym)}</code>  {base:.2f} → {q['price']:.2f}  {trend_emoji(pct_from_base)} {pct_str(pct_from_base)}"
+                )
+            lines.append("")
+            lines.append(f"✅ Gün sonu durum: <b>{hits}/{len(symbols_w)}</b> artıda")
+
+        text = "\n".join(lines) + "\n\n" + build_movers_block(movers, MOVERS_TOP_N)
+        state, text = append_news_to_text(state, text)
+        state = send_auto_deduped(state, "close", text, cooldown_sec=1800)
+        state["eod_sent_day"] = today_str_tr()
+        return state
+
+    # AUTO çalıştı ama saat değil -> hiçbir şey atma
     return state
 
 
@@ -985,13 +1016,14 @@ def run_command_listener(state):
             elif mode in ("pro",):
                 blocks = [header]
                 if state.get("watch", {}).get("symbols"):
-                    blocks.append(build_track_message(state))
+                    blocks.append(build_track_message(state, title="✅ <b>Watchlist Detay</b>"))
                 else:
                     blocks.append(
                         "⚠️ Bugün liste henüz oluşmadı.\n"
-                        "⏰ Seçim aralığı: 10:00–10:10 (hafta içi)\n"
+                        "⏰ Seçim: <b>10:10</b> (10:00–10:10 aralığının sonucu)\n"
                         "🎯 Band hedef: 0.40% – 0.90% (auto genişler)\n"
-                        "🕒 Takip: 11:30–17:30 saat başı\n"
+                        "🕒 Saatlik takip: 11:00–17:00 saat başı\n"
+                        "🟨 17:30 kapanış hazırlık • 🏁 18:10 gün sonu\n"
                     )
                 blocks.append(build_movers_block(movers, MOVERS_TOP_N))
                 blocks.append("⌨️ <code>/taipo top</code> | <code>/taipo news</code> | <code>/taipo</code>")
@@ -1002,9 +1034,9 @@ def run_command_listener(state):
             else:
                 blocks = [header]
                 if state.get("watch", {}).get("symbols"):
-                    blocks.append("✅ <b>Watchlist</b>: bugün seçilen 3 hisse mevcut. (Detay için: <code>/taipo pro</code>)")
+                    blocks.append("✅ <b>Watchlist</b>: bugün seçilen 3 hisse mevcut. (Detay: <code>/taipo pro</code>)")
                 else:
-                    blocks.append("⚠️ Bugün liste henüz oluşmadı. (10:00–10:10 arası oluşur)")
+                    blocks.append("⚠️ Bugün liste henüz oluşmadı. (10:10'da oluşur)")
                 blocks.append(build_movers_block(movers, MOVERS_TOP_N))
                 blocks.append("⌨️ <code>/taipo pro</code> | <code>/taipo top</code> | <code>/taipo news</code> | <code>/taipo help</code>")
                 text_out = "\n\n".join(blocks)
@@ -1053,7 +1085,7 @@ def main():
     state = load_json(STATE_FILE, {})
     state = ensure_today_state(state)
 
-    # listen commands always
+    # COMMAND her zaman dinlenebilir (AUTO çalışsa bile)
     state = run_command_listener(state)
 
     if MODE == "COMMAND":
