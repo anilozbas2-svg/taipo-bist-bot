@@ -3,21 +3,22 @@ name: TAIPO BIST - AUTO (SCHEDULE)
 on:
   workflow_dispatch:
   schedule:
-    # Türkiye saati (UTC+3) -> UTC saatleri aşağıda
+    # GitHub cron = UTC
 
-    # 10:00 TR = 07:00 UTC (Açılış raporu / 1. pencere)
+    # 10:00 TR = 07:00 UTC (Açılış)
     - cron: "0 7 * * 1-5"
 
-    # 10:10 TR = 07:10 UTC (2. pencere)
+    # 10:10 TR = 07:10 UTC (Erken kırılım)
     - cron: "10 7 * * 1-5"
 
     # Saat başı (11:00-17:00 TR) = (08:00-14:00 UTC)
-    - cron: "0 8-14 * * 1-5"
+    # Gecikmeye tolerans için 0 ve 1. dakika
+    - cron: "0,1 8-14 * * 1-5"
 
-    # 17:30 TR = 14:30 UTC (kapanış hazırlık)
+    # 17:30 TR = 14:30 UTC (Kapanış hazırlık)
     - cron: "30 14 * * 1-5"
 
-    # 18:10 TR = 15:10 UTC (kapanış raporu)
+    # 18:10 TR = 15:10 UTC (Gün sonu)
     - cron: "10 15 * * 1-5"
 
 concurrency:
