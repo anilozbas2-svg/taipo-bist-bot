@@ -3,7 +3,7 @@ name: TAIPO BIST - COMMAND
 on:
   workflow_dispatch:
   schedule:
-    # UTC 06:55 => TR 09:55 (seans öncesi hazır)
+    # 09:55 TR = 06:55 UTC (seans öncesi başlat)
     - cron: "55 6 * * 1-5"
 
 concurrency:
@@ -37,7 +37,7 @@ jobs:
           MODE: COMMAND
           COMMAND_MAX_AGE_SEC: "900"
         run: |
-          for i in $(seq 1 1200); do
+          for i in $(seq 1 1300); do
             python main.py
             sleep 25
           done
