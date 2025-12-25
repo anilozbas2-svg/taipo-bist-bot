@@ -28,11 +28,11 @@ on:
     - cron: "5 8-14 * * 1-5"
 
     # ======================
-    # Gun sonu: 17:35 TR => 14:35 UTC
-    # 14:35 ve 14:38 calistiriyoruz
+    # Gun sonu hedef: 17:45 TR => 14:45 UTC
+    # GitHub gecikmesine karsi 14:43 ve 14:45 calistiriyoruz
     # ======================
-    - cron: "35 14 * * 1-5"
-    - cron: "38 14 * * 1-5"
+    - cron: "43 14 * * 1-5"
+    - cron: "45 14 * * 1-5"
 
 concurrency:
   group: taipo-bist-auto
@@ -47,8 +47,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0              # ✅ state.json commit/push daha stabil
-          persist-credentials: true   # ✅ GITHUB_TOKEN ile push yapabilsin
+          fetch-depth: 0
+          persist-credentials: true
 
       - name: Mark repo as safe (git)
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
