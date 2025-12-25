@@ -46,6 +46,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0              # ✅ state.json commit/push daha stabil
+          persist-credentials: true   # ✅ GITHUB_TOKEN ile push yapabilsin
+
+      - name: Mark repo as safe (git)
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Setup Python
         uses: actions/setup-python@v5
