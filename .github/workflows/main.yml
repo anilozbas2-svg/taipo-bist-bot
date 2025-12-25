@@ -1,33 +1,36 @@
 name: TAIPO BIST - AUTO (SCHEDULE)
 
+permissions:
+  contents: write
+
 on:
   workflow_dispatch:
   schedule:
-    # =========================
-    # P1: 10:00–10:10 TR  => 07:00–07:10 UTC
-    # GitHub gecikme ihtimaline karşı 07:00 ve 07:05 çalıştırıyoruz
-    # =========================
+    # ======================
+    # P1: 10:00-10:10 TR => 07:00-07:10 UTC
+    # GitHub gecikme ihtimaline karsi 07:00 ve 07:05 calistiriyoruz
+    # ======================
     - cron: "0 7 * * 1-5"
     - cron: "5 7 * * 1-5"
 
-    # =========================
-    # P2: 10:30–10:40 TR  => 07:30–07:40 UTC
-    # 07:30 ve 07:35 çalıştırıyoruz
-    # =========================
+    # ======================
+    # P2: 10:30-10:40 TR => 07:30-07:40 UTC
+    # 07:30 ve 07:35 calistiriyoruz
+    # ======================
     - cron: "30 7 * * 1-5"
     - cron: "35 7 * * 1-5"
 
-    # =========================
-    # Saatlik takip: 11:00–17:00 TR => 08:00–14:00 UTC
-    # Her saat başı +5 dk (yakalama toleransı)
-    # =========================
+    # ======================
+    # Saatlik takip: 11:00-17:00 TR => 08:00-14:00 UTC
+    # Her saat basi +5 dk (yakalama toleransi)
+    # ======================
     - cron: "0 8-14 * * 1-5"
     - cron: "5 8-14 * * 1-5"
 
-    # =========================
-    # Gün sonu: 17:35 TR => 14:35 UTC
-    # 14:35 ve 14:38 çalıştırıyoruz
-    # =========================
+    # ======================
+    # Gun sonu: 17:35 TR => 14:35 UTC
+    # 14:35 ve 14:38 calistiriyoruz
+    # ======================
     - cron: "35 14 * * 1-5"
     - cron: "38 14 * * 1-5"
 
@@ -60,4 +63,5 @@ jobs:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
           MODE: AUTO
+          PERSIST_STATE: "1"
         run: python main.py
