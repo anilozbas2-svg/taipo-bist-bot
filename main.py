@@ -31,7 +31,9 @@ SYMBOLS_FILE = "bist100.txt"
 
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-PERSIST_STATE = os.getenv("PERSIST_STATE", "0").strip() == "1"
+# ✅ KRİTİK: Default 1 yaptım.
+# İstersen GitHub Actions env'de PERSIST_STATE=0 verip kapatabilirsin.
+PERSIST_STATE = os.getenv("PERSIST_STATE", "1").strip() == "1"
 
 # ---------- PENCERE AYARLARI ----------
 P1_START_H, P1_START_M = 10, 0
@@ -53,25 +55,23 @@ AUTO_BAND_STEPS = [
 ]
 
 # ---------- SAATLIK TAKİP ----------
-# GitHub cron genelde 5 dakikada bir; o yüzden "yakalama penceresi" var
 TRACK_HOURS_TR = {11, 12, 13, 14, 15, 16, 17}
-TRACK_MIN_START = 0   # :00
-TRACK_MIN_END   = 4   # :04 arası yakala (1 kere)
+TRACK_MIN_START = 0
+TRACK_MIN_END   = 4
 
 # ---------- EOD ----------
 EOD_REPORT_HOUR = 17
 EOD_MIN_START = 35
 EOD_MIN_END   = 39
 
-# ---------- MARKET SESSION (yük azaltma) ----------
-# 09:55 - 18:10 TR arası AUTO işleri çalışsın
+# ---------- MARKET SESSION ----------
 SESSION_START_H, SESSION_START_M = 9, 55
 SESSION_END_H,   SESSION_END_M   = 18, 10
 
 # ---------- KOMUT / ANTİ-SPAM ----------
 REPLY_COOLDOWN_SEC = 3
 ID_COOLDOWN_SEC = 30
-COMMAND_MAX_AGE_SEC = int(os.getenv("COMMAND_MAX_AGE_SEC", "1800"))  # 30 dk
+COMMAND_MAX_AGE_SEC = int(os.getenv("COMMAND_MAX_AGE_SEC", "1800"))
 
 # ---------- HABER ----------
 NEWS_MAX_ITEMS = 3
@@ -113,13 +113,11 @@ def ensure_files():
                 "alerts": {},
                 "eod_sent_day": "",
 
-                # P1 / P2 ayrı
                 "p1": {"symbols": [], "baseline": {}, "picked_at": "", "band_used": ""},
                 "p2": {"symbols": [], "baseline": {}, "picked_at": "", "band_used": ""},
                 "p1_sent": False,
                 "p2_sent": False,
 
-                # saatlik spam engeli: saat bazlı key
                 "last_track_sent_key": "",
             },
         )
@@ -212,9 +210,6 @@ def today_str_tr():
 def now_str_tr():
     return datetime.now(TZ).strftime("%d.%m.%Y %H:%M")
 
-def now_key_minute():
-    return datetime.now(TZ).strftime("%Y-%m-%d %H:%M")
-
 def now_key_hour():
     return datetime.now(TZ).strftime("%Y-%m-%d %H")
 
@@ -278,7 +273,7 @@ def is_track_time_now():
     return TRACK_MIN_START <= n.minute <= TRACK_MIN_END
 
 def should_send_track_now(state):
-    key = now_key_hour()  # saat bazında 1 kere
+    key = now_key_hour()
     return state.get("last_track_sent_key", "") != key
 
 def is_eod_time_now():
@@ -326,7 +321,6 @@ def scan_quotes_bulk_intraday(symbols):
     if not symbols:
         return []
 
-    # 1m intraday + 10d daily
     try:
         intraday = yf.download(
             tickers=symbols,
@@ -391,7 +385,6 @@ def scan_quotes_bulk_intraday(symbols):
                 "change_pct": round(float(change_pct), 2),
             }
 
-            # hacim oranı
             if last_vol is not None and avg_vol and avg_vol > 0:
                 q["vol_ratio"] = round(float(last_vol / avg_vol), 2)
 
@@ -801,7 +794,6 @@ def try_pick_window(state, symbols, which: str, start_h, start_m, end_h, end_m, 
 # AUTO
 # =========================================================
 def run_auto(state):
-    # AUTO işleri sadece piyasa seansı içinde çalışsın (yük ve spam azaltır)
     if not in_market_session():
         return state
 
@@ -810,11 +802,9 @@ def run_auto(state):
         send_message(f"⚠️ <b>bist100.txt</b> bulunamadı veya boş.\n🕒 {now_str_tr()}")
         return state
 
-    # movers + alert
     state, movers, _ = get_movers_cached(state, symbols)
     state = maybe_send_alerts(state, movers, TARGET_CHAT_ID)
 
-    # P1 kırılım
     state, msg1, _ = try_pick_window(state, symbols, "p1", P1_START_H, P1_START_M, P1_END_H, P1_END_M, "10:00–10:10 (P1)")
     if msg1:
         msg1 += "\n\n" + build_movers_block(movers, MOVERS_TOP_N)
@@ -822,7 +812,6 @@ def run_auto(state):
         send_message(msg1)
         return state
 
-    # P2 kırılım
     state, msg2, _ = try_pick_window(state, symbols, "p2", P2_START_H, P2_START_M, P2_END_H, P2_END_M, "10:30–10:40 (P2)")
     if msg2:
         msg2 += "\n\n" + build_movers_block(movers, MOVERS_TOP_N)
@@ -830,7 +819,6 @@ def run_auto(state):
         send_message(msg2)
         return state
 
-    # Saatlik takip
     if is_track_time_now() and should_send_track_now(state):
         text = build_hourly_track_message(state)
         text += "\n\n" + build_movers_block(movers, MOVERS_TOP_N)
@@ -838,7 +826,6 @@ def run_auto(state):
         send_message(text)
         state["last_track_sent_key"] = now_key_hour()
 
-    # EOD
     state = maybe_send_eod_report(state, TARGET_CHAT_ID)
 
     return state
@@ -970,6 +957,10 @@ def persist_state_if_enabled():
     try:
         subprocess.run(["git", "config", "user.email", "actions@github.com"], check=False)
         subprocess.run(["git", "config", "user.name", "github-actions"], check=False)
+
+        # ✅ Çakışma azalt
+        subprocess.run(["git", "pull", "--rebase"], check=False)
+
         subprocess.run(["git", "add", STATE_FILE], check=False)
         subprocess.run(["git", "commit", "-m", "chore: update state"], check=False)
         subprocess.run(["git", "push"], check=False)
@@ -984,16 +975,13 @@ def main():
     state = load_json(STATE_FILE, {})
     state = ensure_today_state(state)
 
-    # Komut dinleme HER ZAMAN
     state = run_command_listener(state)
 
-    # Sadece komut modu istenirse
     if MODE == "COMMAND":
         save_json(STATE_FILE, state)
         persist_state_if_enabled()
         return
 
-    # AUTO (P1/P2 + saatlik + eod)
     state = run_auto(state)
 
     save_json(STATE_FILE, state)
