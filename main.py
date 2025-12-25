@@ -16,7 +16,7 @@ import pandas as pd
 # TAIPO-BIST v3 PRO++ (2 Pencere + Saatlik Takip + Haber + Movers)
 # - AUTO: P1(10:00-10:10) + P2(10:30-10:40) kırılım
 # - Saatlik takip: 11:00-17:00 (cron gecikmesine toleranslı)
-# - EOD: 17:35
+# - EOD: 17:35 (yakalama penceresi 17:35–17:45)
 # - Komutlar: /taipo, /taipo pro, /taipo top, /taipo news, /taipo help
 # =========================================================
 
@@ -42,19 +42,12 @@ P2_END_H,   P2_END_M   = 10, 40
 
 PICK_COUNT = 3
 
-# ✅ BIST sabahında %0.40 altı çok sık oluyor → gevşetilmiş bantlar
-AUTO_BAND_STEPS_P1 = [
-    (0.10, 0.60),
-    (0.10, 0.90),
-    (0.10, 1.20),
-    (0.10, 1.50),
-    (0.00, 2.00),
-    (0.00, 3.00),
-]
-AUTO_BAND_STEPS_P2 = [
-    (0.10, 0.80),
-    (0.10, 1.20),
-    (0.10, 1.60),
+AUTO_BAND_STEPS = [
+    (0.40, 0.90),
+    (0.40, 1.00),
+    (0.40, 1.20),
+    (0.30, 1.20),
+    (0.20, 1.50),
     (0.10, 2.00),
     (0.00, 3.00),
 ]
@@ -67,7 +60,7 @@ TRACK_MIN_END   = 4   # :04 arası yakala (1 kere)
 # ---------- EOD ----------
 EOD_REPORT_HOUR = 17
 EOD_MIN_START = 35
-EOD_MIN_END   = 39
+EOD_MIN_END   = 45   # ✅ önce 39’du → gecikme olursa kaçmasın diye 45 yaptık
 
 # ---------- MARKET SESSION (yük azaltma) ----------
 SESSION_START_H, SESSION_START_M = 9, 55
@@ -76,7 +69,7 @@ SESSION_END_H,   SESSION_END_M   = 18, 10
 # ---------- KOMUT / ANTİ-SPAM ----------
 REPLY_COOLDOWN_SEC = 3
 ID_COOLDOWN_SEC = 30
-COMMAND_MAX_AGE_SEC = int(os.getenv("COMMAND_MAX_AGE_SEC", "1800"))
+COMMAND_MAX_AGE_SEC = int(os.getenv("COMMAND_MAX_AGE_SEC", "1800"))  # 30 dk
 
 # ---------- HABER ----------
 NEWS_MAX_ITEMS = 3
@@ -87,12 +80,6 @@ MOVERS_TOP_N = 5
 MOVERS_CACHE_SEC = 120
 ALERT_ABS_PCT = float(os.getenv("ALERT_ABS_PCT", "2.00"))
 ALERT_COOLDOWN_SEC = 6 * 60 * 60  # 6 saat
-
-# ✅ Debug spam engeli (pencerede 1 kere uyarı)
-DEBUG_STATE_KEYS = {
-    "p1_no_data_sent_day": "",
-    "p2_no_data_sent_day": "",
-}
 
 # =========================================================
 # IO
@@ -130,10 +117,6 @@ def ensure_files():
                 "p2_sent": False,
 
                 "last_track_sent_key": "",
-
-                # debug keys
-                "p1_no_data_sent_day": "",
-                "p2_no_data_sent_day": "",
             },
         )
 
@@ -225,6 +208,9 @@ def today_str_tr():
 def now_str_tr():
     return datetime.now(TZ).strftime("%d.%m.%Y %H:%M")
 
+def now_key_minute():
+    return datetime.now(TZ).strftime("%Y-%m-%d %H:%M")
+
 def now_key_hour():
     return datetime.now(TZ).strftime("%Y-%m-%d %H")
 
@@ -247,7 +233,6 @@ def in_market_session():
     return is_in_window(SESSION_START_H, SESSION_START_M, SESSION_END_H, SESSION_END_M)
 
 def ensure_today_state(state):
-    # backwards-safe defaults
     if NEWS_STATE_KEY not in state:
         state[NEWS_STATE_KEY] = {}
     if "movers_cache" not in state:
@@ -268,10 +253,6 @@ def ensure_today_state(state):
     if "last_track_sent_key" not in state:
         state["last_track_sent_key"] = ""
 
-    for k, v in DEBUG_STATE_KEYS.items():
-        if k not in state:
-            state[k] = v
-
     if state.get("day") != today_str_tr():
         state["day"] = today_str_tr()
         state["movers_cache"] = {"ts": 0, "data": None}
@@ -282,8 +263,6 @@ def ensure_today_state(state):
         state["p1_sent"] = False
         state["p2_sent"] = False
         state["last_track_sent_key"] = ""
-        state["p1_no_data_sent_day"] = ""
-        state["p2_no_data_sent_day"] = ""
     return state
 
 def is_track_time_now():
@@ -295,7 +274,7 @@ def is_track_time_now():
     return TRACK_MIN_START <= n.minute <= TRACK_MIN_END
 
 def should_send_track_now(state):
-    key = now_key_hour()
+    key = now_key_hour()  # saat bazında 1 kere
     return state.get("last_track_sent_key", "") != key
 
 def is_eod_time_now():
@@ -339,89 +318,55 @@ def fetch_quote(symbol: str):
     except Exception:
         return None
 
-def _yf_download(symbols, period, interval):
+def scan_quotes_bulk_intraday(symbols):
+    if not symbols:
+        return []
+
     try:
-        return yf.download(
+        intraday = yf.download(
             tickers=symbols,
-            period=period,
-            interval=interval,
+            period="1d",
+            interval="1m",
             group_by="ticker",
             threads=True,
             auto_adjust=False,
             progress=False,
         )
     except Exception:
-        return None
+        intraday = None
 
-def _extract_last_from_download(df_all, sym, col):
-    """
-    yfinance download bazen:
-    - MultiIndex döner (çoklu ticker)
-    - tek ticker'da düz kolon dönebilir
-    Bu fonksiyon ikisini de güvenli çözer.
-    """
-    if df_all is None or not isinstance(df_all, pd.DataFrame) or df_all.empty:
-        return None
-
-    # MultiIndex
-    if isinstance(df_all.columns, pd.MultiIndex):
-        if sym in df_all.columns.get_level_values(0):
-            d = df_all[sym].dropna()
-            if not d.empty and col in d.columns:
-                return d[col].iloc[-1]
-        return None
-
-    # Single ticker flat columns
-    if col in df_all.columns:
-        d = df_all.dropna()
-        if not d.empty:
-            return d[col].iloc[-1]
-    return None
-
-def scan_quotes_bulk_intraday(symbols):
-    """
-    ✅ Fix:
-    - 1m intraday bazen boş → 5m fallback
-    - hiç gelmezse: tek tek fetch_quote ile son çare
-    """
-    if not symbols:
-        return []
-
-    intraday_1m = _yf_download(symbols, period="1d", interval="1m")
-    intraday_5m = None
-    if intraday_1m is None or (isinstance(intraday_1m, pd.DataFrame) and intraday_1m.empty):
-        intraday_5m = _yf_download(symbols, period="1d", interval="5m")
-
-    daily = _yf_download(symbols, period="10d", interval="1d")
+    try:
+        daily = yf.download(
+            tickers=symbols,
+            period="10d",
+            interval="1d",
+            group_by="ticker",
+            threads=True,
+            auto_adjust=False,
+            progress=False,
+        )
+    except Exception:
+        daily = None
 
     out = []
     for sym in symbols:
         try:
-            # last price
             last_price = None
             last_vol = None
 
-            if intraday_1m is not None:
-                lp = _extract_last_from_download(intraday_1m, sym, "Close")
-                lv = _extract_last_from_download(intraday_1m, sym, "Volume")
-                if lp is not None:
-                    last_price = float(lp)
-                if lv is not None:
-                    last_vol = float(lv)
-
-            if last_price is None and intraday_5m is not None:
-                lp = _extract_last_from_download(intraday_5m, sym, "Close")
-                lv = _extract_last_from_download(intraday_5m, sym, "Volume")
-                if lp is not None:
-                    last_price = float(lp)
-                if lv is not None:
-                    last_vol = float(lv)
+            if isinstance(intraday, pd.DataFrame) and not intraday.empty:
+                if isinstance(intraday.columns, pd.MultiIndex):
+                    if sym in intraday.columns.get_level_values(0):
+                        df_i = intraday[sym].dropna()
+                        if not df_i.empty:
+                            last_price = float(df_i["Close"].iloc[-1])
+                            if "Volume" in df_i.columns:
+                                last_vol = float(df_i["Volume"].iloc[-1])
 
             prev_close = None
             avg_vol = None
 
-            if daily is not None:
-                # prev close
+            if isinstance(daily, pd.DataFrame) and not daily.empty:
                 if isinstance(daily.columns, pd.MultiIndex):
                     if sym in daily.columns.get_level_values(0):
                         df_d = daily[sym].dropna()
@@ -429,20 +374,8 @@ def scan_quotes_bulk_intraday(symbols):
                             prev_close = float(df_d["Close"].iloc[-2])
                         if "Volume" in df_d.columns and len(df_d) >= 5:
                             avg_vol = float(df_d["Volume"].tail(10).mean())
-                else:
-                    # single ticker
-                    df_d = daily.dropna()
-                    if len(df_d) >= 2 and "Close" in df_d.columns:
-                        prev_close = float(df_d["Close"].iloc[-2])
-                    if "Volume" in df_d.columns and len(df_d) >= 5:
-                        avg_vol = float(df_d["Volume"].tail(10).mean())
 
-            # last resort
             if last_price is None or prev_close in (None, 0):
-                q_single = fetch_quote(sym)
-                if not q_single:
-                    continue
-                out.append(q_single)
                 continue
 
             change_pct = ((last_price - prev_close) / prev_close) * 100.0
@@ -465,7 +398,18 @@ def scan_quotes_bulk_intraday(symbols):
 def scan_daily_movers(symbols):
     if not symbols:
         return []
-    daily2 = _yf_download(symbols, period="5d", interval="1d")
+    try:
+        daily2 = yf.download(
+            tickers=symbols,
+            period="5d",
+            interval="1d",
+            group_by="ticker",
+            threads=True,
+            auto_adjust=False,
+            progress=False,
+        )
+    except Exception:
+        daily2 = None
 
     out = []
     for sym in symbols:
@@ -475,8 +419,6 @@ def scan_daily_movers(symbols):
                 if isinstance(daily2.columns, pd.MultiIndex):
                     if sym in daily2.columns.get_level_values(0):
                         df = daily2[sym].dropna()
-                else:
-                    df = daily2.dropna()
 
             if df is None or df.empty or "Close" not in df.columns:
                 continue
@@ -514,15 +456,7 @@ def scan_daily_movers(symbols):
             continue
     return out
 
-def pick_breakouts_with_auto_band(quotes, n=3, band_steps=None):
-    """
-    ✅ Fix:
-    - band_steps pencereye göre gelir (P1/P2)
-    - bulamazsa en iyi n'i her koşulda seç (fallback garantili)
-    """
-    if not quotes:
-        return [], None
-
+def pick_breakouts_with_auto_band(quotes, n=3):
     quotes_pos = [q for q in quotes if float(q.get("change_pct", 0)) > 0]
 
     def _rank_score(q: dict) -> float:
@@ -530,19 +464,17 @@ def pick_breakouts_with_auto_band(quotes, n=3, band_steps=None):
         cp = float(q.get("change_pct", 0.0) or 0.0)
         return vr * 10.0 + cp
 
-    if band_steps is None:
-        band_steps = [(0.0, 3.0)]
-
-    for lo, hi in band_steps:
-        pool = [q for q in quotes_pos if lo <= float(q.get("change_pct", 0)) <= hi]
+    for lo, hi in AUTO_BAND_STEPS:
+        pool = [q for q in quotes_pos if lo <= float(q["change_pct"]) <= hi]
+        if not pool:
+            continue
         pool_sorted = sorted(pool, key=_rank_score, reverse=True)
         if len(pool_sorted) >= n:
             return pool_sorted[:n], (lo, hi)
 
-    # fallback: en iyi n (pozitiften)
-    fallback = sorted(quotes_pos, key=_rank_score, reverse=True)[:n]
+    fallback = [q for q in quotes_pos if 0.0 <= float(q.get("change_pct", 0)) <= 3.0]
+    fallback = sorted(fallback, key=_rank_score, reverse=True)[:n]
     if len(fallback) == n:
-        # band bilgisi yoksa "fallback" band yazalım
         return fallback, (0.0, 3.0)
 
     return [], None
@@ -718,10 +650,9 @@ def _build_track_block(label: str, watch_block: dict):
     if band_used:
         lines.append(f"🎚️ Band: {band_used}")
     if not symbols:
-        lines.append("⚠️ Liste yok.")
+        lines.append("⚠️ Bugün bu pencerede kırılım listesi oluşmadı.")
         return "\n".join(lines)
 
-    # not: burada tek tek fetch_quote kullanıyoruz (3+3=6 sembol, sorun olmaz)
     for sym in symbols:
         q = fetch_quote(sym)
         if not q:
@@ -808,20 +739,33 @@ def maybe_send_alerts(state, movers, chat_id):
     state["alerts"] = alerts
     return state
 
-def maybe_send_eod_report(state, chat_id):
+# ✅ YENİ: EOD mesajını daha dolu ve standart bir şablona bağladık
+def build_eod_report_message(state, movers):
+    lines = []
+    lines.append("🏁 <b>GÜN SONU RAPORU</b> – TAIPO BIST v3 PRO++")
+    lines.append("┌──────────────────────────────")
+    lines.append("│ 🔔 <b>KAPANIŞ / TAKİP ÖZETİ</b>")
+    lines.append(f"│ {now_str_tr()} (TR)")
+    lines.append("└──────────────────────────────")
+    lines.append("")
+    lines.append(_build_track_block("Pencere 1 (10:00–10:10)", state.get("p1", {})))
+    lines.append("")
+    lines.append(_build_track_block("Pencere 2 (10:30–10:40)", state.get("p2", {})))
+    lines.append("")
+    lines.append(build_movers_block(movers, MOVERS_TOP_N))
+    lines.append("")
+    lines.append("⌨️ <code>/taipo</code> | <code>/taipo pro</code> | <code>/taipo top</code> | <code>/taipo news</code>")
+    return "\n".join(lines)
+
+def maybe_send_eod_report(state, chat_id, movers):
     if not is_eod_time_now():
         return state
     if state.get("eod_sent_day") == today_str_tr():
         return state
 
-    lines = []
-    lines.append("🏁 <b>GÜN SONU RAPORU</b> – TAIPO BIST")
-    lines.append(f"🕒 {now_str_tr()}")
-    lines.append("")
-    lines.append(_build_track_block("Pencere 1 (10:00–10:10)", state.get("p1", {})))
-    lines.append("")
-    lines.append(_build_track_block("Pencere 2 (10:30–10:40)", state.get("p2", {})))
-    send_message("\n".join(lines), chat_id=chat_id)
+    text = build_eod_report_message(state, movers)
+    state, text = append_news_to_text(state, text)  # haber de ekle (spam engelli, yeni olanlar)
+    send_message(text, chat_id=chat_id)
 
     state["eod_sent_day"] = today_str_tr()
     return state
@@ -829,19 +773,7 @@ def maybe_send_eod_report(state, chat_id):
 # =========================================================
 # PICK (P1 / P2)
 # =========================================================
-def _maybe_send_no_data_once(state, which: str, label: str):
-    """
-    Pencere içinde intraday boş gelirse kullanıcı 'niye yakalamadı' diye bilsin,
-    ama spam olmasın diye günde 1 kere gönderir.
-    """
-    key = f"{which}_no_data_sent_day"
-    if state.get(key) == today_str_tr():
-        return state
-    send_message(f"⚠️ <b>{label} Kırılım</b>: intraday veri boş geldi (yfinance).\n🕒 {now_str_tr()}")
-    state[key] = today_str_tr()
-    return state
-
-def try_pick_window(state, symbols, which: str, start_h, start_m, end_h, end_m, label: str, band_steps):
+def try_pick_window(state, symbols, which: str, start_h, start_m, end_h, end_m, label: str):
     sent_key = f"{which}_sent"
     block_key = which
 
@@ -854,13 +786,10 @@ def try_pick_window(state, symbols, which: str, start_h, start_m, end_h, end_m, 
 
     quotes = scan_quotes_bulk_intraday(symbols)
     if not quotes:
-        state = _maybe_send_no_data_once(state, which, label)
         return state, None, None
 
-    picks, band = pick_breakouts_with_auto_band(quotes, n=PICK_COUNT, band_steps=band_steps)
+    picks, band = pick_breakouts_with_auto_band(quotes, n=PICK_COUNT)
     if not band or len(picks) < PICK_COUNT:
-        # yine de debug: veri var ama seçemedi → band/fallback sorunu
-        # burada spam yapmayalım; picks boşsa sessiz geçsin
         return state, None, None
 
     watch_syms = [q["symbol"] for q in picks]
@@ -892,12 +821,7 @@ def run_auto(state):
     state = maybe_send_alerts(state, movers, TARGET_CHAT_ID)
 
     # P1 kırılım
-    state, msg1, _ = try_pick_window(
-        state, symbols, "p1",
-        P1_START_H, P1_START_M, P1_END_H, P1_END_M,
-        "10:00–10:10 (P1)",
-        band_steps=AUTO_BAND_STEPS_P1,
-    )
+    state, msg1, _ = try_pick_window(state, symbols, "p1", P1_START_H, P1_START_M, P1_END_H, P1_END_M, "10:00–10:10 (P1)")
     if msg1:
         msg1 += "\n\n" + build_movers_block(movers, MOVERS_TOP_N)
         state, msg1 = append_news_to_text(state, msg1)
@@ -905,12 +829,7 @@ def run_auto(state):
         return state
 
     # P2 kırılım
-    state, msg2, _ = try_pick_window(
-        state, symbols, "p2",
-        P2_START_H, P2_START_M, P2_END_H, P2_END_M,
-        "10:30–10:40 (P2)",
-        band_steps=AUTO_BAND_STEPS_P2,
-    )
+    state, msg2, _ = try_pick_window(state, symbols, "p2", P2_START_H, P2_START_M, P2_END_H, P2_END_M, "10:30–10:40 (P2)")
     if msg2:
         msg2 += "\n\n" + build_movers_block(movers, MOVERS_TOP_N)
         state, msg2 = append_news_to_text(state, msg2)
@@ -925,8 +844,8 @@ def run_auto(state):
         send_message(text)
         state["last_track_sent_key"] = now_key_hour()
 
-    # EOD
-    state = maybe_send_eod_report(state, TARGET_CHAT_ID)
+    # ✅ EOD (daha güçlü + gecikme toleranslı)
+    state = maybe_send_eod_report(state, TARGET_CHAT_ID, movers)
 
     return state
 
@@ -1024,7 +943,7 @@ def run_command_listener(state):
 
             else:
                 blocks = [header]
-                blocks.append("✅ <b>Durum</b>: P1/P2 otomatik kırılım + saatlik takip aktif.")
+                blocks.append("✅ <b>Durum</b>: P1/P2 otomatik kırılım + saatlik takip + kapanış raporu aktif.")
                 blocks.append(build_movers_block(movers, MOVERS_TOP_N))
                 blocks.append("⌨️ <code>/taipo pro</code> | <code>/taipo top</code> | <code>/taipo news</code> | <code>/taipo help</code>")
                 text_out = "\n\n".join(blocks)
