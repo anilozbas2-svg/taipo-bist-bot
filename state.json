@@ -18,10 +18,13 @@
     "2026 borsa ne zaman açilacak? borsa i̇stanbul, nyse ve nasdaq wall street 2026 resmi tatil günleri ve erken kapanış saatleri - cnn türk finans": 1767105912,
     "borsa istanbul opens last trading day of year up - anadolu ajansı": 1767192077,
     "bist 100’de son durum: investingpro’nun primli ve i̇skontolu öngördüğü i̇ki hissenin teknik görünümü - investing.com türkiye": 1767192077,
-    "borsa bugün açik mi? 1 ocak borsalar açik mi? 31 aralık borsalar açık mı kapalı mı? 31 aralık yarım gün mü? borsa i̇stanbul yılbaşı çalışma saatleri... - cnn türk finans": 1767192077
+    "borsa bugün açik mi? 1 ocak borsalar açik mi? 31 aralık borsalar açık mı kapalı mı? 31 aralık yarım gün mü? borsa i̇stanbul yılbaşı çalışma saatleri... - cnn türk finans": 1767192077,
+    "1 ocak bugün borsalar açik mi? yeni yıl yılbaşında borsalar açık mı kapalı mı? borsa i̇stanbul ne zaman açılacak? - cnn türk finans": 1767278469,
+    "bist 100 hisselerinde 2025 yılının enleri - borsa gundem": 1767278469,
+    "bist-50 - xu050 endeksi - 31 aralık 2025 bist-50 endeksi - mynet finans": 1767278469
   },
   "movers_cache": {
-    "ts": 1767275299,
+    "ts": 1767278463,
     "data": [
       {
         "symbol": "AEFES.IS",
@@ -526,7 +529,7 @@
     "POLTK.IS": 1767275303,
     "SELEC.IS": 1767275303
   },
-  "eod_sent_day": "",
+  "eod_sent_day": "2026-01-01",
   "p1": {
     "symbols": [],
     "baseline": {},
