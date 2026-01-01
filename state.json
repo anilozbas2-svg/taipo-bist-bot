@@ -21,7 +21,7 @@
     "borsa bugün açik mi? 1 ocak borsalar açik mi? 31 aralık borsalar açık mı kapalı mı? 31 aralık yarım gün mü? borsa i̇stanbul yılbaşı çalışma saatleri... - cnn türk finans": 1767192077
   },
   "movers_cache": {
-    "ts": 1767267080,
+    "ts": 1767275299,
     "data": [
       {
         "symbol": "AEFES.IS",
@@ -516,15 +516,15 @@
     ]
   },
   "alerts": {
-    "BRISA.IS": 1767253232,
-    "CIMSA.IS": 1767253232,
-    "ISCTR.IS": 1767253232,
-    "TAVHL.IS": 1767253232,
-    "BRSAN.IS": 1767253232,
-    "OTKAR.IS": 1767253232,
-    "KONTR.IS": 1767253232,
-    "POLTK.IS": 1767253232,
-    "SELEC.IS": 1767253232
+    "BRISA.IS": 1767275303,
+    "CIMSA.IS": 1767275303,
+    "ISCTR.IS": 1767275303,
+    "TAVHL.IS": 1767275303,
+    "BRSAN.IS": 1767275303,
+    "OTKAR.IS": 1767275303,
+    "KONTR.IS": 1767275303,
+    "POLTK.IS": 1767275303,
+    "SELEC.IS": 1767275303
   },
   "eod_sent_day": "",
   "p1": {
