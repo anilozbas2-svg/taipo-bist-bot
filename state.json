@@ -4,9 +4,6 @@
   "last_id_reply_ts": 0,
   "day": "2026-01-08",
   "news_seen": {
-    "borsa istanbul opens last trading day of year up - anadolu ajansı": 1767192077,
-    "bist 100’de son durum: investingpro’nun primli ve i̇skontolu öngördüğü i̇ki hissenin teknik görünümü - investing.com türkiye": 1767192077,
-    "borsa bugün açik mi? 1 ocak borsalar açik mi? 31 aralık borsalar açık mı kapalı mı? 31 aralık yarım gün mü? borsa i̇stanbul yılbaşı çalışma saatleri... - cnn türk finans": 1767192077,
     "1 ocak bugün borsalar açik mi? yeni yıl yılbaşında borsalar açık mı kapalı mı? borsa i̇stanbul ne zaman açılacak? - cnn türk finans": 1767278469,
     "bist 100 hisselerinde 2025 yılının enleri - borsa gundem": 1767278469,
     "bist-50 - xu050 endeksi - 31 aralık 2025 bist-50 endeksi - mynet finans": 1767278469,
@@ -21,7 +18,10 @@
     "borsa i̇stanbul'da bist 100 endeksi rekor kırdı - anadolu ajansı": 1767690023,
     "borsa i̇stanbul'da manipülasyon soruşturması: 17 kişi gözaltına alındı - euronews.com": 1767776418,
     "borsa i̇stanbul'dan yeni rekor - trt haber": 1767776418,
-    "endeks 12.000 puanın üzerinde: bist 100’de rekor serisi sürüyor - getmidas.com": 1767776418
+    "endeks 12.000 puanın üzerinde: bist 100’de rekor serisi sürüyor - getmidas.com": 1767776418,
+    "bist 100 yeni güne rekor seviyenin üzerinde başladı - dünya gazetesi": 1767862819,
+    "göstergeleri al sinyali veren bist 100 hisseleri hangileri? (8 ocak) - getmidas.com": 1767862819,
+    "canli borsa | borsa i̇stanbul 8 ocak 2026 perşembe: i̇şte bist 100 endeksi - - mynet finans": 1767862819
   },
   "movers_cache": {
     "ts": 1767862744,
@@ -544,7 +544,7 @@
   },
   "p1_sent": false,
   "p2_sent": false,
-  "last_track_sent_key": "",
+  "last_track_sent_key": "2026-01-08 12",
   "p1_no_data_sent_day": "",
   "p2_no_data_sent_day": ""
 }
