@@ -4,9 +4,6 @@
   "last_id_reply_ts": 0,
   "day": "2026-01-14",
   "news_seen": {
-    "borsa i̇stanbul'da manipülasyon soruşturması: 17 kişi gözaltına alındı - euronews.com": 1767776418,
-    "borsa i̇stanbul'dan yeni rekor - trt haber": 1767776418,
-    "endeks 12.000 puanın üzerinde: bist 100’de rekor serisi sürüyor - getmidas.com": 1767776418,
     "bist 100 yeni güne rekor seviyenin üzerinde başladı - dünya gazetesi": 1767862819,
     "göstergeleri al sinyali veren bist 100 hisseleri hangileri? (8 ocak) - getmidas.com": 1767862819,
     "canli borsa | borsa i̇stanbul 8 ocak 2026 perşembe: i̇şte bist 100 endeksi - - mynet finans": 1767862819,
@@ -18,7 +15,10 @@
     "bist-100 - xu100 endeksi - 12 ocak 2026 bist-100 endeksi - mynet finans": 1768208510,
     "bist-100 - xu100 endeksi - 13 ocak 2026 bist-100 endeksi - mynet finans": 1768294860,
     "bist 100 güne yatay başladı: açılışta hangi hisseler öne çıktı? - investing.com türkiye": 1768294860,
-    "piyasalarda günün özeti: 12 ocak 2026 bist 100'de değişimler ve döviz fiyatları | borsa haberleri - bloomberght": 1768294860
+    "piyasalarda günün özeti: 12 ocak 2026 bist 100'de değişimler ve döviz fiyatları | borsa haberleri - bloomberght": 1768294860,
+    "bist-100 - xu100 endeksi - 14 ocak 2026 bist-100 endeksi - mynet finans": 1768381259,
+    "bist 100 güne yükselişle başladı: açılışta hangi hisseler öne çıktı? yazar investing.com - investing.com türkiye": 1768381259,
+    "asya borsaları çin hariç pozitif seyrediyor - uzmanpara": 1768381259
   },
   "movers_cache": {
     "ts": 1768381178,
@@ -547,7 +547,7 @@
   },
   "p1_sent": false,
   "p2_sent": false,
-  "last_track_sent_key": "",
+  "last_track_sent_key": "2026-01-14 12",
   "p1_no_data_sent_day": "",
   "p2_no_data_sent_day": ""
 }
