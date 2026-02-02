@@ -45,7 +45,7 @@
     "bist-100 - xu100 endeksi - 2 şubat 2026 bist-100 endeksi - mynet finans": 1770019406
   },
   "movers_cache": {
-    "ts": 1770019400,
+    "ts": 1770020989,
     "data": [
       {
         "symbol": "AEFES.IS",
@@ -259,10 +259,10 @@
       },
       {
         "symbol": "SASA.IS",
-        "price": 2.49,
-        "change_pct": -4.23,
-        "vol_ratio": 1.11,
-        "score": -3.84
+        "price": 2.55,
+        "change_pct": -1.92,
+        "vol_ratio": 3.0,
+        "score": -0.87
       },
       {
         "symbol": "SISE.IS",
@@ -336,10 +336,10 @@
       },
       {
         "symbol": "TUPRS.IS",
-        "price": 230.3,
-        "change_pct": -7.29,
-        "vol_ratio": 0.33,
-        "score": -7.17
+        "price": 244.8,
+        "change_pct": -1.45,
+        "vol_ratio": 0.82,
+        "score": -1.16
       },
       {
         "symbol": "ULKER.IS",
