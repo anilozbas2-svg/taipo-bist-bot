@@ -4,9 +4,6 @@
   "last_id_reply_ts": 0,
   "day": "2026-02-02",
   "news_seen": {
-    "borsa haftaya düşüşle başladı - uzmanpara": 1769412976,
-    "piyasalarda günün özeti: 23 ocak 2026 bist 100'de değişimler ve döviz fiyatları | borsa haberleri - bloomberght": 1769412976,
-    "borsa i̇stanbul haftaya düşüşle başladı - borsagundem.com.tr": 1769412976,
     "bist-100 - xu100 endeksi - 27 ocak 2026 bist-100 endeksi - mynet finans": 1769499393,
     "türkiye's bist 100 index closes above 13,000 level for 1st time - anadolu ajansı": 1769499393,
     "bist 100'den yeni rekor - trt haber": 1769499393,
@@ -42,10 +39,13 @@
     "bist 100 rekordan döndü: trump'ın fed kararı mı etkiliyor? (30 ocak 2026) - yeniçağ gazetesi": 1769760021,
     "bist 100 güne sakin başladı: açılışta hangi hisseler öne çıktı? yazar investing.com - investing.com türkiye": 1769783921,
     "apple'ın satışları arttı - uzmanpara": 1769783921,
-    "merkez bankası'ndan enflasyon analizi - uzmanpara": 1769783921
+    "merkez bankası'ndan enflasyon analizi - uzmanpara": 1769783921,
+    "borsa istanbul opens week with decline - anadolu ajansı": 1770019406,
+    "bist 100 haftaya düşüşle başladı: açılışta hangi hisseler öne çıktı? yazar investing.com - investing.com türkiye": 1770019406,
+    "bist-100 - xu100 endeksi - 2 şubat 2026 bist-100 endeksi - mynet finans": 1770019406
   },
   "movers_cache": {
-    "ts": 1770018891,
+    "ts": 1770019400,
     "data": [
       {
         "symbol": "AEFES.IS",
@@ -259,10 +259,10 @@
       },
       {
         "symbol": "SASA.IS",
-        "price": 2.55,
-        "change_pct": -1.92,
-        "vol_ratio": 3.0,
-        "score": -0.87
+        "price": 2.49,
+        "change_pct": -4.23,
+        "vol_ratio": 1.11,
+        "score": -3.84
       },
       {
         "symbol": "SISE.IS",
@@ -336,10 +336,10 @@
       },
       {
         "symbol": "TUPRS.IS",
-        "price": 244.8,
-        "change_pct": -1.45,
-        "vol_ratio": 0.82,
-        "score": -1.16
+        "price": 230.3,
+        "change_pct": -7.29,
+        "vol_ratio": 0.33,
+        "score": -7.17
       },
       {
         "symbol": "ULKER.IS",
@@ -584,7 +584,7 @@
   },
   "p1_sent": false,
   "p2_sent": false,
-  "last_track_sent_key": "",
+  "last_track_sent_key": "2026-02-02 11",
   "p1_no_data_sent_day": "",
   "p2_no_data_sent_day": ""
 }
