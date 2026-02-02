@@ -45,7 +45,7 @@
     "bist-100 - xu100 endeksi - 2 şubat 2026 bist-100 endeksi - mynet finans": 1770019406
   },
   "movers_cache": {
-    "ts": 1770031688,
+    "ts": 1770032330,
     "data": [
       {
         "symbol": "AEFES.IS",
@@ -56,10 +56,10 @@
       },
       {
         "symbol": "AGHOL.IS",
-        "price": 34.22,
-        "change_pct": 0.65,
-        "vol_ratio": 0.87,
-        "score": 0.95
+        "price": 35.0,
+        "change_pct": 2.94,
+        "vol_ratio": 1.38,
+        "score": 3.42
       },
       {
         "symbol": "AKBNK.IS",
@@ -175,10 +175,10 @@
       },
       {
         "symbol": "GUBRF.IS",
-        "price": 476.0,
-        "change_pct": -6.85,
-        "vol_ratio": 0.82,
-        "score": -6.56
+        "price": 480.5,
+        "change_pct": -5.97,
+        "vol_ratio": 1.05,
+        "score": -5.6
       },
       {
         "symbol": "HEKTS.IS",
@@ -231,10 +231,10 @@
       },
       {
         "symbol": "OYAKC.IS",
-        "price": 26.6,
-        "change_pct": -2.92,
-        "vol_ratio": 0.48,
-        "score": -2.75
+        "price": 27.6,
+        "change_pct": 0.73,
+        "vol_ratio": 1.0,
+        "score": 1.08
       },
       {
         "symbol": "PETKM.IS",
@@ -266,10 +266,10 @@
       },
       {
         "symbol": "SISE.IS",
-        "price": 45.78,
-        "change_pct": 0.0,
-        "vol_ratio": 0.57,
-        "score": 0.2
+        "price": 45.5,
+        "change_pct": -0.61,
+        "vol_ratio": 1.57,
+        "score": -0.06
       },
       {
         "symbol": "SKBNK.IS",
