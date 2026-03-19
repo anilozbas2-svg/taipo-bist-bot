@@ -15,10 +15,13 @@
     "göstergeleri al sinyali veren bist 100 hisseleri hangileri? - getmidas.com": 1773651755,
     "bist-100 - xu100 endeksi - 19 mart 2026 bist-100 endeksi - mynet finans": 1773907411,
     "bugün borsa açık mı? arefe günü borsa i̇stanbul kapanış saatleri - yeni şafak": 1773907411,
-    "borsa i̇stanbul arife gününe jeopolitik baskıyla satıcılı başladı yazar investing.com - investing.com türkiye": 1773907411
+    "borsa i̇stanbul arife gününe jeopolitik baskıyla satıcılı başladı yazar investing.com - investing.com türkiye": 1773907411,
+    "türkiye's bist 100 down at weekly close - anadolu ajansı": 1773928856,
+    "borsa i̇stanbul bugün açık mı? arefe günü borsa i̇stanbul'da işlem yapılacak mı? 19 mart çalışma saatleri - yeni şafak": 1773928856,
+    "borsa i̇stanbul’dan pazar değişikliği - borsagundem.com.tr": 1773928856
   },
   "movers_cache": {
-    "ts": 1773926122,
+    "ts": 1773928849,
     "data": [
       {
         "symbol": "AEFES.IS",
@@ -492,12 +495,12 @@
     ]
   },
   "alerts": {
-    "ENJSA.IS": 1773906418,
-    "GUBRF.IS": 1773906418,
+    "ENJSA.IS": 1773928853,
+    "GUBRF.IS": 1773928853,
     "SISE.IS": 1773906418,
-    "OTKAR.IS": 1773906418,
-    "MIATK.IS": 1773906418,
-    "ECILC.IS": 1773906418,
+    "OTKAR.IS": 1773928853,
+    "MIATK.IS": 1773928853,
+    "ECILC.IS": 1773928853,
     "SOKM.IS": 1773907408,
     "RALYH.IS": 1773908941,
     "NTHOL.IS": 1773912724,
@@ -532,7 +535,7 @@
   },
   "p1_sent": false,
   "p2_sent": false,
-  "last_track_sent_key": "2026-03-19 11",
+  "last_track_sent_key": "2026-03-19 17",
   "p1_no_data_sent_day": "",
   "p2_no_data_sent_day": ""
 }
