@@ -2,7 +2,7 @@
   "last_update_id": 0,
   "last_command_reply_ts": 0,
   "last_id_reply_ts": 0,
-  "day": "2026-03-19",
+  "day": "2026-03-20",
   "news_seen": {
     "borsa i̇stanbul güne düşüşle başladı: açılışta hangi hisseler öne çıktı? yazar investing.com - investing.com türkiye": 1773326411,
     "borsa i̇stanbul günün ilk yarısında yüzde 0,69 değer kazandı - i̇stanbul ticaret gazetesi": 1773326411,
@@ -21,7 +21,7 @@
     "borsa i̇stanbul’dan pazar değişikliği - borsagundem.com.tr": 1773928856
   },
   "movers_cache": {
-    "ts": 1773931994,
+    "ts": 1773992734,
     "data": [
       {
         "symbol": "AEFES.IS",
@@ -495,30 +495,26 @@
     ]
   },
   "alerts": {
-    "ENJSA.IS": 1773928853,
-    "GUBRF.IS": 1773928853,
-    "SISE.IS": 1773906418,
-    "OTKAR.IS": 1773928853,
-    "MIATK.IS": 1773928853,
-    "ECILC.IS": 1773928853,
-    "SOKM.IS": 1773907408,
-    "RALYH.IS": 1773908941,
-    "NTHOL.IS": 1773912724,
-    "GENTS.IS": 1773912724,
-    "AKBNK.IS": 1773913902,
-    "ARCLK.IS": 1773913902,
-    "ASELS.IS": 1773913902,
-    "BIMAS.IS": 1773913902,
-    "CIMSA.IS": 1773913902,
-    "DOAS.IS": 1773913902,
-    "FROTO.IS": 1773913902,
-    "KCHOL.IS": 1773913902,
-    "SMRTG.IS": 1773913902,
-    "TAVHL.IS": 1773913902,
-    "VESBE.IS": 1773913902,
-    "ALFAS.IS": 1773913902,
-    "KONTR.IS": 1773913902,
-    "OTTO.IS": 1773913902
+    "AKBNK.IS": 1773992737,
+    "ARCLK.IS": 1773992737,
+    "ASELS.IS": 1773992737,
+    "BIMAS.IS": 1773992737,
+    "CIMSA.IS": 1773992737,
+    "DOAS.IS": 1773992737,
+    "ENJSA.IS": 1773992737,
+    "FROTO.IS": 1773992737,
+    "GUBRF.IS": 1773992737,
+    "KCHOL.IS": 1773992737,
+    "SMRTG.IS": 1773992737,
+    "TAVHL.IS": 1773992737,
+    "VESBE.IS": 1773992737,
+    "ALFAS.IS": 1773992737,
+    "OTKAR.IS": 1773992737,
+    "KONTR.IS": 1773992737,
+    "MIATK.IS": 1773992737,
+    "ECILC.IS": 1773992737,
+    "GENTS.IS": 1773992737,
+    "OTTO.IS": 1773992737
   },
   "eod_sent_day": "",
   "p1": {
@@ -535,7 +531,7 @@
   },
   "p1_sent": false,
   "p2_sent": false,
-  "last_track_sent_key": "2026-03-19 17",
+  "last_track_sent_key": "",
   "p1_no_data_sent_day": "",
   "p2_no_data_sent_day": ""
 }
