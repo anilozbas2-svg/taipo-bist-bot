@@ -15,10 +15,13 @@
     "borsa i̇stanbul’dan pazar değişikliği - borsagundem.com.tr": 1773928856,
     "bist-100 - xu100 endeksi - 20 mart 2026 bist-100 endeksi - mynet finans": 1773993729,
     "borsa i̇stanbul bugün açık mı? borsa i̇stanbul ne zaman açılacak? 20 mart çalışma saatleri - yeni şafak": 1773993729,
-    "borsa günü düşüşle tamamladı - anadolu ajansı": 1773993729
+    "borsa günü düşüşle tamamladı - anadolu ajansı": 1773993729,
+    "bist 100 güne yükselişle başladı: açılışta hangi hisseler öne çıktı? yazar investing.com - investing.com türkiye": 1774017321,
+    "borsa güne düşüşle başladı - anadolu ajansı": 1774017321,
+    "bugün borsa açık mı? bayramda borsa i̇stanbul'da işlem yapılıyor mu? - dünya gazetesi": 1774017321
   },
   "movers_cache": {
-    "ts": 1774014769,
+    "ts": 1774017315,
     "data": [
       {
         "symbol": "AEFES.IS",
@@ -513,7 +516,7 @@
     "GENTS.IS": 1774014773,
     "OTTO.IS": 1774014773
   },
-  "eod_sent_day": "",
+  "eod_sent_day": "2026-03-20",
   "p1": {
     "symbols": [],
     "baseline": {},
