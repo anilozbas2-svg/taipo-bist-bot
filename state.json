@@ -21,476 +21,476 @@
     "bi̇st’te tarihi sıçrama: 1 haftada 1.4 trilyonluk artış haberi - borsanın gündemi": 1776157479
   },
   "movers_cache": {
-    "ts": 1776164098,
+    "ts": 1776164863,
     "data": [
       {
         "symbol": "AEFES.IS",
-        "price": 18.45,
-        "change_pct": 0.05,
-        "vol_ratio": 0.46,
-        "score": 0.22
+        "price": 18.41,
+        "change_pct": -0.16,
+        "vol_ratio": 0.48,
+        "score": 0.01
       },
       {
         "symbol": "AGHOL.IS",
-        "price": 30.4,
-        "change_pct": 1.27,
-        "vol_ratio": 0.32,
-        "score": 1.38
+        "price": 30.3,
+        "change_pct": 0.93,
+        "vol_ratio": 0.35,
+        "score": 1.06
       },
       {
         "symbol": "AKBNK.IS",
-        "price": 79.8,
-        "change_pct": 3.1,
-        "vol_ratio": 0.58,
-        "score": 3.3
+        "price": 79.75,
+        "change_pct": 3.04,
+        "vol_ratio": 0.6,
+        "score": 3.25
       },
       {
         "symbol": "AKSA.IS",
         "price": 10.29,
         "change_pct": 0.0,
-        "vol_ratio": 0.73,
+        "vol_ratio": 0.74,
         "score": 0.26
       },
       {
         "symbol": "ALARK.IS",
-        "price": 93.45,
-        "change_pct": 0.48,
+        "price": 93.4,
+        "change_pct": 0.43,
         "vol_ratio": 0.44,
-        "score": 0.64
+        "score": 0.59
       },
       {
         "symbol": "ARCLK.IS",
-        "price": 118.1,
-        "change_pct": -0.92,
-        "vol_ratio": 0.54,
-        "score": -0.73
+        "price": 118.0,
+        "change_pct": -1.01,
+        "vol_ratio": 0.56,
+        "score": -0.81
       },
       {
         "symbol": "ASELS.IS",
-        "price": 412.5,
-        "change_pct": -0.66,
-        "vol_ratio": 0.49,
-        "score": -0.49
+        "price": 411.75,
+        "change_pct": -0.84,
+        "vol_ratio": 0.51,
+        "score": -0.66
       },
       {
         "symbol": "ASTOR.IS",
-        "price": 201.4,
-        "change_pct": 1.1,
-        "vol_ratio": 0.98,
-        "score": 1.45
+        "price": 201.7,
+        "change_pct": 1.26,
+        "vol_ratio": 1.0,
+        "score": 1.6
       },
       {
         "symbol": "BIMAS.IS",
-        "price": 754.0,
-        "change_pct": 1.34,
-        "vol_ratio": 0.5,
-        "score": 1.52
+        "price": 754.5,
+        "change_pct": 1.41,
+        "vol_ratio": 0.51,
+        "score": 1.59
       },
       {
         "symbol": "BRISA.IS",
-        "price": 85.1,
-        "change_pct": 0.83,
-        "vol_ratio": 0.44,
-        "score": 0.98
+        "price": 84.85,
+        "change_pct": 0.53,
+        "vol_ratio": 0.45,
+        "score": 0.69
       },
       {
         "symbol": "CCOLA.IS",
-        "price": 75.6,
-        "change_pct": 1.14,
-        "vol_ratio": 0.46,
-        "score": 1.3
+        "price": 75.55,
+        "change_pct": 1.07,
+        "vol_ratio": 0.48,
+        "score": 1.24
       },
       {
         "symbol": "CIMSA.IS",
-        "price": 53.1,
-        "change_pct": -0.28,
-        "vol_ratio": 0.53,
-        "score": -0.1
+        "price": 53.15,
+        "change_pct": -0.19,
+        "vol_ratio": 0.56,
+        "score": 0.01
       },
       {
         "symbol": "DOAS.IS",
-        "price": 190.4,
-        "change_pct": -0.31,
-        "vol_ratio": 0.37,
-        "score": -0.18
+        "price": 190.3,
+        "change_pct": -0.37,
+        "vol_ratio": 0.39,
+        "score": -0.23
       },
       {
         "symbol": "EKGYO.IS",
-        "price": 21.18,
-        "change_pct": 0.86,
-        "vol_ratio": 0.54,
-        "score": 1.05
+        "price": 21.14,
+        "change_pct": 0.67,
+        "vol_ratio": 0.56,
+        "score": 0.86
       },
       {
         "symbol": "ENJSA.IS",
-        "price": 123.8,
-        "change_pct": 4.21,
-        "vol_ratio": 0.87,
-        "score": 4.51
+        "price": 122.9,
+        "change_pct": 3.45,
+        "vol_ratio": 0.9,
+        "score": 3.77
       },
       {
         "symbol": "EREGL.IS",
-        "price": 31.76,
-        "change_pct": -0.75,
-        "vol_ratio": 0.47,
-        "score": -0.59
+        "price": 31.7,
+        "change_pct": -0.94,
+        "vol_ratio": 0.49,
+        "score": -0.77
       },
       {
         "symbol": "FROTO.IS",
-        "price": 106.1,
-        "change_pct": 1.14,
-        "vol_ratio": 0.63,
-        "score": 1.36
+        "price": 105.8,
+        "change_pct": 0.86,
+        "vol_ratio": 0.65,
+        "score": 1.08
       },
       {
         "symbol": "GARAN.IS",
         "price": 141.5,
         "change_pct": 2.02,
-        "vol_ratio": 0.55,
-        "score": 2.21
+        "vol_ratio": 0.57,
+        "score": 2.22
       },
       {
         "symbol": "GUBRF.IS",
-        "price": 484.5,
-        "change_pct": 0.31,
+        "price": 485.0,
+        "change_pct": 0.41,
         "vol_ratio": 0.58,
-        "score": 0.51
+        "score": 0.62
       },
       {
         "symbol": "HEKTS.IS",
-        "price": 3.06,
-        "change_pct": -0.97,
-        "vol_ratio": 0.67,
-        "score": -0.74
+        "price": 3.07,
+        "change_pct": -0.65,
+        "vol_ratio": 0.69,
+        "score": -0.41
       },
       {
         "symbol": "ISCTR.IS",
         "price": 14.75,
         "change_pct": 0.96,
-        "vol_ratio": 0.69,
-        "score": 1.2
+        "vol_ratio": 0.72,
+        "score": 1.21
       },
       {
         "symbol": "KARSN.IS",
-        "price": 10.7,
-        "change_pct": 3.28,
-        "vol_ratio": 0.83,
-        "score": 3.57
+        "price": 10.39,
+        "change_pct": 0.29,
+        "vol_ratio": 0.95,
+        "score": 0.62
       },
       {
         "symbol": "KCHOL.IS",
-        "price": 207.1,
-        "change_pct": 1.47,
-        "vol_ratio": 0.45,
-        "score": 1.63
+        "price": 207.2,
+        "change_pct": 1.52,
+        "vol_ratio": 0.47,
+        "score": 1.68
       },
       {
         "symbol": "MAVI.IS",
-        "price": 43.42,
-        "change_pct": 0.56,
-        "vol_ratio": 0.37,
-        "score": 0.68
+        "price": 43.38,
+        "change_pct": 0.46,
+        "vol_ratio": 0.38,
+        "score": 0.6
       },
       {
         "symbol": "MGROS.IS",
-        "price": 650.0,
-        "change_pct": 1.4,
-        "vol_ratio": 0.71,
-        "score": 1.65
+        "price": 650.5,
+        "change_pct": 1.48,
+        "vol_ratio": 0.72,
+        "score": 1.73
       },
       {
         "symbol": "ODAS.IS",
-        "price": 6.91,
-        "change_pct": 1.62,
-        "vol_ratio": 0.78,
-        "score": 1.89
+        "price": 6.86,
+        "change_pct": 0.88,
+        "vol_ratio": 0.83,
+        "score": 1.17
       },
       {
         "symbol": "OYAKC.IS",
-        "price": 25.36,
-        "change_pct": 0.79,
-        "vol_ratio": 0.5,
-        "score": 0.97
+        "price": 25.32,
+        "change_pct": 0.64,
+        "vol_ratio": 0.53,
+        "score": 0.82
       },
       {
         "symbol": "PETKM.IS",
-        "price": 21.84,
-        "change_pct": -1.62,
-        "vol_ratio": 0.44,
-        "score": -1.47
+        "price": 21.98,
+        "change_pct": -0.99,
+        "vol_ratio": 0.45,
+        "score": -0.83
       },
       {
         "symbol": "PGSUS.IS",
         "price": 186.7,
         "change_pct": 1.63,
-        "vol_ratio": 0.64,
+        "vol_ratio": 0.65,
         "score": 1.86
       },
       {
         "symbol": "SAHOL.IS",
-        "price": 100.4,
-        "change_pct": 1.31,
-        "vol_ratio": 0.62,
-        "score": 1.53
+        "price": 100.5,
+        "change_pct": 1.41,
+        "vol_ratio": 0.63,
+        "score": 1.63
       },
       {
         "symbol": "SASA.IS",
-        "price": 2.59,
-        "change_pct": -0.38,
-        "vol_ratio": 3.16,
-        "score": 0.72
+        "price": 2.6,
+        "change_pct": 0.0,
+        "vol_ratio": 3.18,
+        "score": 1.11
       },
       {
         "symbol": "SISE.IS",
-        "price": 48.1,
-        "change_pct": 0.71,
-        "vol_ratio": 0.66,
-        "score": 0.94
+        "price": 48.2,
+        "change_pct": 0.92,
+        "vol_ratio": 0.68,
+        "score": 1.16
       },
       {
         "symbol": "SKBNK.IS",
-        "price": 12.57,
-        "change_pct": 0.64,
-        "vol_ratio": 0.38,
-        "score": 0.77
+        "price": 12.61,
+        "change_pct": 0.96,
+        "vol_ratio": 0.39,
+        "score": 1.1
       },
       {
         "symbol": "SMRTG.IS",
-        "price": 7.3,
-        "change_pct": -0.95,
+        "price": 7.29,
+        "change_pct": -1.09,
         "vol_ratio": 0.35,
-        "score": -0.83
+        "score": -0.96
       },
       {
         "symbol": "SOKM.IS",
-        "price": 53.45,
-        "change_pct": -0.19,
-        "vol_ratio": 0.69,
-        "score": 0.06
+        "price": 53.3,
+        "change_pct": -0.47,
+        "vol_ratio": 0.71,
+        "score": -0.22
       },
       {
         "symbol": "TAVHL.IS",
-        "price": 329.25,
-        "change_pct": 0.23,
-        "vol_ratio": 0.43,
-        "score": 0.38
+        "price": 327.25,
+        "change_pct": -0.38,
+        "vol_ratio": 0.44,
+        "score": -0.23
       },
       {
         "symbol": "TCELL.IS",
-        "price": 116.4,
-        "change_pct": 0.61,
-        "vol_ratio": 0.52,
-        "score": 0.79
+        "price": 116.2,
+        "change_pct": 0.43,
+        "vol_ratio": 0.55,
+        "score": 0.62
       },
       {
         "symbol": "THYAO.IS",
-        "price": 322.75,
-        "change_pct": 1.89,
-        "vol_ratio": 0.57,
-        "score": 2.09
+        "price": 323.25,
+        "change_pct": 2.05,
+        "vol_ratio": 0.58,
+        "score": 2.25
       },
       {
         "symbol": "TKFEN.IS",
         "price": 119.1,
         "change_pct": 0.68,
-        "vol_ratio": 0.61,
+        "vol_ratio": 0.62,
         "score": 0.89
       },
       {
         "symbol": "TTKOM.IS",
-        "price": 62.85,
-        "change_pct": 0.8,
-        "vol_ratio": 0.37,
-        "score": 0.93
+        "price": 62.8,
+        "change_pct": 0.72,
+        "vol_ratio": 0.39,
+        "score": 0.86
       },
       {
         "symbol": "TTRAK.IS",
-        "price": 485.25,
-        "change_pct": 1.09,
-        "vol_ratio": 0.37,
-        "score": 1.22
+        "price": 485.75,
+        "change_pct": 1.2,
+        "vol_ratio": 0.41,
+        "score": 1.34
       },
       {
         "symbol": "TUPRS.IS",
-        "price": 265.0,
-        "change_pct": 0.38,
-        "vol_ratio": 0.43,
-        "score": 0.53
+        "price": 266.25,
+        "change_pct": 0.85,
+        "vol_ratio": 0.45,
+        "score": 1.01
       },
       {
         "symbol": "ULKER.IS",
-        "price": 119.0,
-        "change_pct": -0.25,
-        "vol_ratio": 0.47,
-        "score": -0.09
+        "price": 118.8,
+        "change_pct": -0.42,
+        "vol_ratio": 0.49,
+        "score": -0.25
       },
       {
         "symbol": "VAKBN.IS",
-        "price": 34.62,
-        "change_pct": 0.99,
-        "vol_ratio": 0.57,
-        "score": 1.19
+        "price": 34.56,
+        "change_pct": 0.82,
+        "vol_ratio": 0.58,
+        "score": 1.02
       },
       {
         "symbol": "VESBE.IS",
-        "price": 7.17,
-        "change_pct": 0.84,
-        "vol_ratio": 0.43,
-        "score": 0.99
+        "price": 7.18,
+        "change_pct": 0.98,
+        "vol_ratio": 0.45,
+        "score": 1.14
       },
       {
         "symbol": "VESTL.IS",
         "price": 28.08,
         "change_pct": 0.79,
-        "vol_ratio": 0.31,
+        "vol_ratio": 0.32,
         "score": 0.9
       },
       {
         "symbol": "YKBNK.IS",
-        "price": 38.32,
-        "change_pct": 0.68,
-        "vol_ratio": 1.02,
-        "score": 1.04
+        "price": 38.26,
+        "change_pct": 0.53,
+        "vol_ratio": 1.05,
+        "score": 0.89
       },
       {
         "symbol": "ZOREN.IS",
         "price": 2.93,
         "change_pct": 1.03,
-        "vol_ratio": 0.55,
-        "score": 1.23
+        "vol_ratio": 0.59,
+        "score": 1.24
       },
       {
         "symbol": "ALFAS.IS",
-        "price": 38.38,
-        "change_pct": 1.0,
-        "vol_ratio": 0.51,
-        "score": 1.18
+        "price": 38.28,
+        "change_pct": 0.74,
+        "vol_ratio": 0.52,
+        "score": 0.92
       },
       {
         "symbol": "BRSAN.IS",
-        "price": 570.5,
-        "change_pct": 8.05,
-        "vol_ratio": 1.05,
-        "score": 8.42
+        "price": 571.5,
+        "change_pct": 8.24,
+        "vol_ratio": 1.06,
+        "score": 8.61
       },
       {
         "symbol": "OTKAR.IS",
-        "price": 397.5,
-        "change_pct": 1.27,
-        "vol_ratio": 0.69,
-        "score": 1.52
+        "price": 397.25,
+        "change_pct": 1.21,
+        "vol_ratio": 0.7,
+        "score": 1.46
       },
       {
         "symbol": "GESAN.IS",
         "price": 50.45,
         "change_pct": -1.37,
-        "vol_ratio": 0.39,
+        "vol_ratio": 0.4,
         "score": -1.23
       },
       {
         "symbol": "GWIND.IS",
-        "price": 27.18,
-        "change_pct": -0.88,
-        "vol_ratio": 0.58,
-        "score": -0.67
+        "price": 27.12,
+        "change_pct": -1.09,
+        "vol_ratio": 0.6,
+        "score": -0.88
       },
       {
         "symbol": "KONTR.IS",
-        "price": 9.93,
-        "change_pct": -1.97,
-        "vol_ratio": 1.0,
-        "score": -1.63
+        "price": 9.91,
+        "change_pct": -2.17,
+        "vol_ratio": 1.01,
+        "score": -1.82
       },
       {
         "symbol": "MIATK.IS",
-        "price": 40.2,
-        "change_pct": 0.1,
-        "vol_ratio": 0.45,
-        "score": 0.26
+        "price": 40.14,
+        "change_pct": -0.05,
+        "vol_ratio": 0.47,
+        "score": 0.11
       },
       {
         "symbol": "NTHOL.IS",
-        "price": 39.1,
-        "change_pct": 1.14,
-        "vol_ratio": 0.55,
-        "score": 1.33
+        "price": 39.02,
+        "change_pct": 0.93,
+        "vol_ratio": 0.61,
+        "score": 1.15
       },
       {
         "symbol": "QUAGR.IS",
-        "price": 3.54,
-        "change_pct": 4.12,
-        "vol_ratio": 0.68,
-        "score": 4.36
+        "price": 3.53,
+        "change_pct": 3.82,
+        "vol_ratio": 0.69,
+        "score": 4.07
       },
       {
         "symbol": "ULUUN.IS",
-        "price": 7.87,
-        "change_pct": 0.25,
-        "vol_ratio": 0.38,
-        "score": 0.39
+        "price": 7.85,
+        "change_pct": 0.0,
+        "vol_ratio": 0.39,
+        "score": 0.13
       },
       {
         "symbol": "AKFYE.IS",
         "price": 22.08,
         "change_pct": 0.27,
-        "vol_ratio": 0.38,
-        "score": 0.4
+        "vol_ratio": 0.39,
+        "score": 0.41
       },
       {
         "symbol": "ECILC.IS",
-        "price": 102.6,
-        "change_pct": -6.04,
-        "vol_ratio": 1.54,
-        "score": -5.5
+        "price": 102.3,
+        "change_pct": -6.32,
+        "vol_ratio": 1.56,
+        "score": -5.77
       },
       {
         "symbol": "GENTS.IS",
-        "price": 8.11,
-        "change_pct": 0.62,
-        "vol_ratio": 0.54,
-        "score": 0.81
+        "price": 8.09,
+        "change_pct": 0.37,
+        "vol_ratio": 0.55,
+        "score": 0.57
       },
       {
         "symbol": "ISDMR.IS",
-        "price": 44.28,
-        "change_pct": 0.87,
-        "vol_ratio": 0.32,
-        "score": 0.98
+        "price": 44.22,
+        "change_pct": 0.73,
+        "vol_ratio": 0.33,
+        "score": 0.84
       },
       {
         "symbol": "TUKAS.IS",
         "price": 2.4,
         "change_pct": 0.84,
-        "vol_ratio": 0.45,
-        "score": 1.0
+        "vol_ratio": 0.54,
+        "score": 1.03
       },
       {
         "symbol": "POLTK.IS",
-        "price": 5152.5,
-        "change_pct": 2.03,
-        "vol_ratio": 0.63,
-        "score": 2.25
+        "price": 5170.0,
+        "change_pct": 2.38,
+        "vol_ratio": 0.65,
+        "score": 2.6
       },
       {
         "symbol": "RALYH.IS",
-        "price": 265.25,
-        "change_pct": 3.51,
-        "vol_ratio": 0.53,
-        "score": 3.7
+        "price": 265.0,
+        "change_pct": 3.41,
+        "vol_ratio": 0.54,
+        "score": 3.6
       },
       {
         "symbol": "OTTO.IS",
-        "price": 338.0,
-        "change_pct": 1.81,
-        "vol_ratio": 0.89,
-        "score": 2.12
+        "price": 335.75,
+        "change_pct": 1.13,
+        "vol_ratio": 0.93,
+        "score": 1.46
       },
       {
         "symbol": "SELEC.IS",
-        "price": 88.45,
-        "change_pct": 1.38,
-        "vol_ratio": 0.83,
-        "score": 1.67
+        "price": 88.65,
+        "change_pct": 1.6,
+        "vol_ratio": 0.86,
+        "score": 1.91
       }
     ]
   },
