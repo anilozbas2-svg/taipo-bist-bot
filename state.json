@@ -36,7 +36,7 @@
     "piyasalarda günün özeti: 17 nisan 2026 bist 100'de değişimler ve döviz fiyatları - bloomberght": 1776690095
   },
   "movers_cache": {
-    "ts": 1776937684,
+    "ts": 1776941975,
     "data": [
       {
         "symbol": "AEFES.IS",
@@ -121,13 +121,6 @@
         "change_pct": 2.27,
         "vol_ratio": 1.38,
         "score": 2.75
-      },
-      {
-        "symbol": "DOAS.IS",
-        "price": 183.5,
-        "change_pct": -0.97,
-        "vol_ratio": 0.73,
-        "score": -0.72
       },
       {
         "symbol": "EKGYO.IS",
