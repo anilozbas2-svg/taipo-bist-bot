@@ -9,10 +9,13 @@
     "borsa i̇stanbul açıldı 27 nisan 2026: bist 100'de yeni gelişmeler - finans haberlerinin doğru adresi - mynet finans haber - mynet finans": 1777284210,
     "bist 100 güne yatay başladı: açılışta hangi hisseler öne çıktı? yazar investing.com - investing.com türkiye": 1777370634,
     "borsa güne yükselişle başladı - anadolu ajansı": 1777370634,
-    "borsa i̇stanbul 19 hisseyi katılım endeksinden çıkardı - paratic haber": 1777370634
+    "borsa i̇stanbul 19 hisseyi katılım endeksinden çıkardı - paratic haber": 1777370634,
+    "borsa 1 mayis cuma (bugün) açik mi? borsa i̇stanbul 1 mayıs cuma günü işlem görecek mi? - uzmanpara": 1777646699,
+    "piyasalarda günün özeti: 30 nisan 2026 bist 100'de değişimler ve döviz fiyatları - bloomberght": 1777646699,
+    "1 mayıs borsa i̇stanbul tatil mi, çalışıyor mu? bugün borsa i̇stanbul kaça kadar açık? - yeni şafak": 1777646699
   },
   "movers_cache": {
-    "ts": 1777642015,
+    "ts": 1777646692,
     "data": [
       {
         "symbol": "AEFES.IS",
@@ -505,7 +508,7 @@
     "OTTO.IS": 1777625995,
     "SELEC.IS": 1777625995
   },
-  "eod_sent_day": "",
+  "eod_sent_day": "2026-05-01",
   "p1": {
     "symbols": [],
     "baseline": {},
