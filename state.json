@@ -15,7 +15,7 @@
     "1 mayıs borsa i̇stanbul tatil mi, çalışıyor mu? bugün borsa i̇stanbul kaça kadar açık? - yeni şafak": 1777646699
   },
   "movers_cache": {
-    "ts": 1777646692,
+    "ts": 1777647598,
     "data": [
       {
         "symbol": "AEFES.IS",
@@ -489,24 +489,24 @@
     ]
   },
   "alerts": {
-    "AKSA.IS": 1777625995,
-    "ASTOR.IS": 1777625995,
-    "EREGL.IS": 1777625995,
-    "HEKTS.IS": 1777625995,
-    "ISCTR.IS": 1777625995,
-    "MGROS.IS": 1777625995,
-    "PETKM.IS": 1777625995,
-    "SISE.IS": 1777625995,
-    "SMRTG.IS": 1777625995,
-    "TKFEN.IS": 1777625995,
-    "OTKAR.IS": 1777625995,
-    "GESAN.IS": 1777625995,
-    "GWIND.IS": 1777625995,
-    "QUAGR.IS": 1777625995,
-    "ULUUN.IS": 1777625995,
-    "RALYH.IS": 1777625995,
-    "OTTO.IS": 1777625995,
-    "SELEC.IS": 1777625995
+    "AKSA.IS": 1777647602,
+    "ASTOR.IS": 1777647602,
+    "EREGL.IS": 1777647602,
+    "HEKTS.IS": 1777647602,
+    "ISCTR.IS": 1777647602,
+    "MGROS.IS": 1777647602,
+    "PETKM.IS": 1777647602,
+    "SISE.IS": 1777647602,
+    "SMRTG.IS": 1777647602,
+    "TKFEN.IS": 1777647602,
+    "OTKAR.IS": 1777647602,
+    "GESAN.IS": 1777647602,
+    "GWIND.IS": 1777647602,
+    "QUAGR.IS": 1777647602,
+    "ULUUN.IS": 1777647602,
+    "RALYH.IS": 1777647602,
+    "OTTO.IS": 1777647602,
+    "SELEC.IS": 1777647602
   },
   "eod_sent_day": "2026-05-01",
   "p1": {
