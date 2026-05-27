@@ -4,24 +4,12 @@
   "last_id_reply_ts": 0,
   "day": "2026-05-27",
   "news_seen": {
-    "borsa i̇stanbul rekor tazeledi - trt haber": 1778238042,
-    "nisan ayında yatırımcısına en çok kazandıran bist 100 oldu - foreks.com": 1778238042,
-    "borsa i̇stanbul’da rekor serisi sürüyor! bi̇st'te tarihi kapanış haberi - borsanın gündemi": 1778238042,
-    "nisanda en fazla aylık reel getiri bist 100'de oldu - trt haber": 1778245455,
-    "sokm’nin birleşme kararı, vakbn’nin 10 yıl vadeli kredisi, klser’den borçlanma ihracı: bist şirketlerinden güncel haberler - investing.com türkiye": 1778245455,
-    "vi̇op'ta endeks kontratı güne düşüşle başladı - bigpara": 1778245455,
-    "bist 100 güne yükselişle başladı: açılışta hangi hisseler öne çıktı? yazar investing.com - investing.com türkiye": 1778666700,
-    "göstergeleri al sinyali veren bist 100 hisseleri hangileri? - getmidas.com": 1778666700,
-    "ne altın ne mevduat: yüzde 60'tan fazla kazandırdı! borsa i̇stanbul’da kritik eşik: uzman isim yükselişin şifrelerini anlattı - uzmanpara": 1778666700,
-    "bist 100 güne pozitif başladı: açılışta hangi hisseler öne çıktı? yazar investing.com - investing.com türkiye": 1778753044,
-    "piyasalarda günün özeti: 13 mayıs 2026 bist 100'de değişimler ve döviz fiyatları - bloomberght": 1778753044,
-    "canli borsa | borsa yükselişle başladı: 14 mayıs 2026 perşembe bist 100 - finans haberlerinin doğru adresi - mynet finans haber - mynet finans": 1778753044,
-    "borsada düşüş derinleşti: bi̇st'te 'kırmızı' gün haberi - borsanın gündemi": 1778839331,
-    "göstergeleri al sinyali veren bist 100 hisseleri hangileri? (14 mayıs) - getmidas.com": 1778839331,
-    "borsa güne düşüşle başladı - anadolu ajansı": 1778839331
+    "göstergeleri al sinyali veren bist 100 hisseleri hangileri? - getmidas.com": 1779879852,
+    "bist:thyao için burakkesmeci tarafından thyao detaylı analiz - 2026 - tradingview": 1779879852,
+    "piyasalarda günün özeti: 21 mayıs 2026 bist 100'de değişimler ve döviz fiyatları - bloomberght": 1779879852
   },
   "movers_cache": {
-    "ts": 1779879588,
+    "ts": 1779879846,
     "data": [
       {
         "symbol": "AEFES.IS",
@@ -538,7 +526,7 @@
   },
   "p1_sent": false,
   "p2_sent": false,
-  "last_track_sent_key": "",
+  "last_track_sent_key": "2026-05-27 14",
   "p1_no_data_sent_day": "",
   "p2_no_data_sent_day": ""
 }
