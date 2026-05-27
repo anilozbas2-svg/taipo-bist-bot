@@ -9,7 +9,7 @@
     "piyasalarda günün özeti: 21 mayıs 2026 bist 100'de değişimler ve döviz fiyatları - bloomberght": 1779879852
   },
   "movers_cache": {
-    "ts": 1779882133,
+    "ts": 1779893400,
     "data": [
       {
         "symbol": "AEFES.IS",
@@ -374,13 +374,6 @@
         "change_pct": 2.58,
         "vol_ratio": 1.65,
         "score": 3.16
-      },
-      {
-        "symbol": "GWIND.IS",
-        "price": 26.9,
-        "change_pct": -1.39,
-        "vol_ratio": 0.4,
-        "score": -1.25
       },
       {
         "symbol": "KONTR.IS",
