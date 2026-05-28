@@ -6,10 +6,13 @@
   "news_seen": {
     "göstergeleri al sinyali veren bist 100 hisseleri hangileri? - getmidas.com": 1779879852,
     "bist:thyao için burakkesmeci tarafından thyao detaylı analiz - 2026 - tradingview": 1779879852,
-    "piyasalarda günün özeti: 21 mayıs 2026 bist 100'de değişimler ve döviz fiyatları - bloomberght": 1779879852
+    "piyasalarda günün özeti: 21 mayıs 2026 bist 100'de değişimler ve döviz fiyatları - bloomberght": 1779879852,
+    "bayramda borsa açık mı, kapalı mı, işlem yapılıyor mu? borsa i̇stanbul ne zaman açılacak? - bigpara": 1779966017,
+    "bayramda borsa açık mı, kapalı mı? bugün bi̇st tatil mi, ne zaman açılacak? 28 mayıs perşembe bugün borsa i̇stanbul tatil mi, işlem yapılyor mu? | özgün haberler - yeni şafak": 1779966017,
+    "bist 100’de bugün en çok hangi hisseler yükseldi? - investing.com türkiye": 1779966017
   },
   "movers_cache": {
-    "ts": 1779965695,
+    "ts": 1779966007,
     "data": [
       {
         "symbol": "AEFES.IS",
@@ -526,7 +529,7 @@
   },
   "p1_sent": false,
   "p2_sent": false,
-  "last_track_sent_key": "",
+  "last_track_sent_key": "2026-05-28 14",
   "p1_no_data_sent_day": "",
   "p2_no_data_sent_day": ""
 }
