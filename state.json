@@ -4,12 +4,6 @@
   "last_id_reply_ts": 0,
   "day": "2026-07-15",
   "news_seen": {
-    "borsa i̇stanbul’da gong orzax için çaldı - bloomberght": 1783435497,
-    "bist 100 endeksi yeni haftaya yükselişle başladı - trt haber": 1783435497,
-    "borsa i̇stanbul’da gong orzax için çaldı - gazete oksijen": 1783435497,
-    "borsa i̇stanbul’da gong golda gıda için çaldı - bloomberght": 1783505035,
-    "finansal yatırım araçlarının reel getiri oranları - haziran 2026 - veri portalı - tüi̇k": 1783505035,
-    "borsa i̇stanbul için kritik 'statü' uyarısı: türkiye izlemeye alındı - gazete oksijen": 1783505035,
     "15 temmuz 2026’da borsa i̇stanbul (bi̇st) açık mı, kapalı mı? 15 temmuz 2026 borsa çalışıyor mu? - cumhuriyet": 1783688563,
     "yabancı yatırımcılar borsa i̇stanbul'da alımlarını artırdı - dünya gazetesi": 1783688563,
     "hisseler bu haberle hareketlendi: bist'in savunma-teknoloji şirketi 3,9 milyon dolarlık anlaşmayı duyurdu - cnbc-e": 1783688563,
@@ -27,10 +21,13 @@
     "borsada resmi tatil günleri 📢 15 temmuz yarın borsa açık mı, kapalı mı? 15 temmuz yarın borsa i̇stanbul resmi tatil mi? - uzmanpara": 1784023304,
     "borsa i̇stanbul'da bist 100 endeksi 0,32 değer kaybetti - uzmanpara": 1784034094,
     "15 temmuz (yarın) borsa açık mı, kapalı mı olacak? 15 temmuz borsa i̇stanbul (bi̇st) işlem görecek mi? - bigpara": 1784034094,
-    "bist 100 endeksi yüzde 0,32 düştü - sondakika": 1784034094
+    "bist 100 endeksi yüzde 0,32 düştü - sondakika": 1784034094,
+    "borsa bugün kapali mi? 15 temmuz 2026 bugün borsa i̇stanbul (bi̇st) işlem yapıyor mu? borsa ne zaman açılacak? - uzmanpara": 1784120687,
+    "15 temmuz'da borsa açık mı, kapalı mı? borsa i̇stanbul bugün işlem görüyor mu? - ntv haber": 1784120687,
+    "piyasalarda günün özeti: 14 temmuz 2026 bist 100'de değişimler ve döviz fiyatları - bloomberght": 1784120687
   },
   "movers_cache": {
-    "ts": 1784117893,
+    "ts": 1784120681,
     "data": [
       {
         "symbol": "AEFES.IS",
@@ -538,7 +535,7 @@
   },
   "p1_sent": false,
   "p2_sent": false,
-  "last_track_sent_key": "",
+  "last_track_sent_key": "2026-07-15 16",
   "p1_no_data_sent_day": "",
   "p2_no_data_sent_day": ""
 }
