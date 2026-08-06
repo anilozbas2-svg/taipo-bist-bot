@@ -12,7 +12,7 @@
     "piyasalarda günün özeti: 3 ağustos 2026 bist 100'de değişimler ve döviz fiyatları - bloomberght.com": 1785848668
   },
   "movers_cache": {
-    "ts": 1786011799,
+    "ts": 1786012954,
     "data": [
       {
         "symbol": "AEFES.IS",
@@ -226,10 +226,10 @@
       },
       {
         "symbol": "SASA.IS",
-        "price": 2.59,
-        "change_pct": 1.17,
+        "price": 2.58,
+        "change_pct": 0.78,
         "vol_ratio": 1.0,
-        "score": 1.52
+        "score": 1.13
       },
       {
         "symbol": "SISE.IS",
