@@ -9,7 +9,10 @@
     "borsa i̇stanbul günün ilk yarısında sert değer kaybetti haberi - borsanın gündemi": 1791384040,
     "borsa güne yükselişle başladı: bist 100 12.264 puanda - dünya gazetesi": 1791557097,
     "borsa i̇stanbul güne yükselişle başladı - ekonomim": 1791557097,
-    "borsa güne alımlarla başladı: bist 100 12.264 puanda - yeni şafak": 1791557097
+    "borsa güne alımlarla başladı: bist 100 12.264 puanda - yeni şafak": 1791557097,
+    "borsa i̇stanbul günü ekside açtı - ekonomim": 1791982865,
+    "borsa i̇stanbul 14 ekim 2026: bist 100'de kritik seviyeler - manşet haber": 1791982865,
+    "kap *** borsa i̇stanbul a.ş. *** hekts *** özsermaye hallerine i̇lişkin borsa duyurusu - gzt": 1791982865
   },
   "movers_cache": {
     "ts": 1791982786,
@@ -524,7 +527,7 @@
   },
   "p1_sent": false,
   "p2_sent": false,
-  "last_track_sent_key": "",
+  "last_track_sent_key": "2026-10-14 16",
   "p1_no_data_sent_day": "",
   "p2_no_data_sent_day": ""
 }
