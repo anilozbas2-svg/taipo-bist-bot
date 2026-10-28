@@ -9,7 +9,7 @@
     "bist 100'de 11 bin puan sınavı - bloomberght": 1793025475
   },
   "movers_cache": {
-    "ts": 1793197202,
+    "ts": 1793197367,
     "data": [
       {
         "symbol": "AEFES.IS",
@@ -241,13 +241,6 @@
         "change_pct": -0.63,
         "vol_ratio": 0.27,
         "score": -0.53
-      },
-      {
-        "symbol": "SMRTG.IS",
-        "price": 3.83,
-        "change_pct": -1.54,
-        "vol_ratio": 0.19,
-        "score": -1.48
       },
       {
         "symbol": "SOKM.IS",
