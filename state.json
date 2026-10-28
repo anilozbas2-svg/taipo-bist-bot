@@ -12,7 +12,7 @@
     "28 ekim borsa yarım gün mü , kaça kadar açık? 29 ekim borsa kapalı mı 2026? cumhuriyet bayramı borsa çalışma saatleri - hürriyet": 1793198229
   },
   "movers_cache": {
-    "ts": 1793198219,
+    "ts": 1793199409,
     "data": [
       {
         "symbol": "AEFES.IS",
@@ -237,6 +237,13 @@
         "change_pct": 0.41,
         "vol_ratio": 0.37,
         "score": 0.54
+      },
+      {
+        "symbol": "SKBNK.IS",
+        "price": 3.17,
+        "change_pct": -0.63,
+        "vol_ratio": 0.27,
+        "score": -0.53
       },
       {
         "symbol": "SMRTG.IS",
