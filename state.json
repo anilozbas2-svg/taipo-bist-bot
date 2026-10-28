@@ -6,10 +6,13 @@
   "news_seen": {
     "borsa i̇stanbul kaç gün tati̇le gi̇ri̇yor? 📊 28 ekim borsa açık mı, kapalı mı? 28 ve 29 ekim borsa i̇stanbul resmi tatil mi, çalışıyor mu? - uzmanpara": 1793025475,
     "borsa yeni haftaya 11.180,31 puandan başladı - trt haber": 1793025475,
-    "bist 100'de 11 bin puan sınavı - bloomberght": 1793025475
+    "bist 100'de 11 bin puan sınavı - bloomberght": 1793025475,
+    "28 eki̇m çarşamba borsa bugün açık mı, saat kaça kadar açık? borsa i̇stanbul resmi tatil günleri... - uzmanpara": 1793198229,
+    "bist 100'de gözler o seviyede: i̇smail güner iki senaryoyu anlattı - cnbc-e": 1793198229,
+    "28 ekim borsa yarım gün mü , kaça kadar açık? 29 ekim borsa kapalı mı 2026? cumhuriyet bayramı borsa çalışma saatleri - hürriyet": 1793198229
   },
   "movers_cache": {
-    "ts": 1793197367,
+    "ts": 1793198219,
     "data": [
       {
         "symbol": "AEFES.IS",
@@ -236,11 +239,11 @@
         "score": 0.54
       },
       {
-        "symbol": "SKBNK.IS",
-        "price": 3.17,
-        "change_pct": -0.63,
-        "vol_ratio": 0.27,
-        "score": -0.53
+        "symbol": "SMRTG.IS",
+        "price": 3.83,
+        "change_pct": -1.54,
+        "vol_ratio": 0.19,
+        "score": -1.48
       },
       {
         "symbol": "SOKM.IS",
@@ -500,7 +503,7 @@
     "POLTK.IS": 1793195385,
     "RALYH.IS": 1793195385
   },
-  "eod_sent_day": "",
+  "eod_sent_day": "2026-10-28",
   "p1": {
     "symbols": [],
     "baseline": {},
