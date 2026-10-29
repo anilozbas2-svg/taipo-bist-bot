@@ -9,10 +9,13 @@
     "bist 100'de 11 bin puan sınavı - bloomberght": 1793025475,
     "28 eki̇m çarşamba borsa bugün açık mı, saat kaça kadar açık? borsa i̇stanbul resmi tatil günleri... - uzmanpara": 1793198229,
     "bist 100'de gözler o seviyede: i̇smail güner iki senaryoyu anlattı - cnbc-e": 1793198229,
-    "28 ekim borsa yarım gün mü , kaça kadar açık? 29 ekim borsa kapalı mı 2026? cumhuriyet bayramı borsa çalışma saatleri - hürriyet": 1793198229
+    "28 ekim borsa yarım gün mü , kaça kadar açık? 29 ekim borsa kapalı mı 2026? cumhuriyet bayramı borsa çalışma saatleri - hürriyet": 1793198229,
+    "borsa i̇stanbul’da 29 ekim düzenlemesi! tarihler değişti - bigpara": 1793284534,
+    "türkiye's bist 100 down at opening session - anadolu ajansı": 1793284534,
+    "borsa'da bu hafta ne bekleniyor? fon krizi derinleşiyor, bist 100'de 10 bin puan riski - para analiz": 1793284534
   },
   "movers_cache": {
-    "ts": 1793282738,
+    "ts": 1793284524,
     "data": [
       {
         "symbol": "AEFES.IS",
@@ -510,7 +513,7 @@
     "POLTK.IS": 1793282188,
     "RALYH.IS": 1793282188
   },
-  "eod_sent_day": "",
+  "eod_sent_day": "2026-10-29",
   "p1": {
     "symbols": [],
     "baseline": {},
