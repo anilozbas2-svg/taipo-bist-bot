@@ -2,7 +2,7 @@
   "last_update_id": 0,
   "last_command_reply_ts": 0,
   "last_id_reply_ts": 0,
-  "day": "2026-10-28",
+  "day": "2026-10-29",
   "news_seen": {
     "borsa i̇stanbul kaç gün tati̇le gi̇ri̇yor? 📊 28 ekim borsa açık mı, kapalı mı? 28 ve 29 ekim borsa i̇stanbul resmi tatil mi, çalışıyor mu? - uzmanpara": 1793025475,
     "borsa yeni haftaya 11.180,31 puandan başladı - trt haber": 1793025475,
@@ -12,7 +12,7 @@
     "28 ekim borsa yarım gün mü , kaça kadar açık? 29 ekim borsa kapalı mı 2026? cumhuriyet bayramı borsa çalışma saatleri - hürriyet": 1793198229
   },
   "movers_cache": {
-    "ts": 1793199409,
+    "ts": 1793282182,
     "data": [
       {
         "symbol": "AEFES.IS",
@@ -67,8 +67,8 @@
         "symbol": "ASTOR.IS",
         "price": 176.5,
         "change_pct": 2.38,
-        "vol_ratio": 1.96,
-        "score": 3.06
+        "vol_ratio": 1.98,
+        "score": 3.07
       },
       {
         "symbol": "BIMAS.IS",
@@ -486,31 +486,31 @@
     ]
   },
   "alerts": {
-    "AEFES.IS": 1793195385,
-    "AGHOL.IS": 1793195385,
-    "AKBNK.IS": 1793195385,
-    "AKSA.IS": 1793195385,
-    "ALARK.IS": 1793195385,
-    "ASELS.IS": 1793195385,
-    "ASTOR.IS": 1793195385,
-    "KARSN.IS": 1793195385,
-    "OYAKC.IS": 1793195385,
-    "SAHOL.IS": 1793195385,
-    "SOKM.IS": 1793195385,
-    "TAVHL.IS": 1793195385,
-    "VESBE.IS": 1793195385,
-    "YKBNK.IS": 1793195385,
-    "ZOREN.IS": 1793195385,
-    "BRSAN.IS": 1793195385,
-    "KONTR.IS": 1793195385,
-    "QUAGR.IS": 1793195385,
-    "AKFYE.IS": 1793195385,
-    "ECILC.IS": 1793195385,
-    "ISDMR.IS": 1793195385,
-    "POLTK.IS": 1793195385,
-    "RALYH.IS": 1793195385
+    "AEFES.IS": 1793282188,
+    "AGHOL.IS": 1793282188,
+    "AKBNK.IS": 1793282188,
+    "AKSA.IS": 1793282188,
+    "ALARK.IS": 1793282188,
+    "ASELS.IS": 1793282188,
+    "ASTOR.IS": 1793282188,
+    "KARSN.IS": 1793282188,
+    "OYAKC.IS": 1793282188,
+    "SAHOL.IS": 1793282188,
+    "SOKM.IS": 1793282188,
+    "TAVHL.IS": 1793282188,
+    "VESBE.IS": 1793282188,
+    "YKBNK.IS": 1793282188,
+    "ZOREN.IS": 1793282188,
+    "BRSAN.IS": 1793282188,
+    "KONTR.IS": 1793282188,
+    "QUAGR.IS": 1793282188,
+    "AKFYE.IS": 1793282188,
+    "ECILC.IS": 1793282188,
+    "ISDMR.IS": 1793282188,
+    "POLTK.IS": 1793282188,
+    "RALYH.IS": 1793282188
   },
-  "eod_sent_day": "2026-10-28",
+  "eod_sent_day": "",
   "p1": {
     "symbols": [],
     "baseline": {},
